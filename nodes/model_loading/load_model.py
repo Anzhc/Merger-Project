@@ -46,4 +46,5 @@ def get_spec():
             {'kind': 'combo', 'name': 'DType', 'bind': 'dtype', 'options': {'values': ['fp32', 'fp16', 'bf16']}},
         ],
         'properties': {'path': '', 'dtype': 'fp16'},
+        'tooltip': 'Load a model from disk',
     }

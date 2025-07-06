@@ -14,6 +14,7 @@ body, html {margin:0; padding:0; height:100%; overflow:hidden; background:#222; 
 .node-item {border:1px solid #555; padding:4px; margin-bottom:4px; cursor:grab; background:#444; color:#eee;}
 .node-item:active {cursor:grabbing;}
 #graph {background:#2b2b2b; width:100%; height:100%; display:block;}
+#node-tooltip{position:fixed;background:#333;color:#eee;padding:4px 6px;border-radius:4px;pointer-events:none;z-index:20;display:none;font-size:12px;max-width:200px;}
 </style>
 </head>
 <body>
@@ -24,12 +25,16 @@ body, html {margin:0; padding:0; height:100%; overflow:hidden; background:#222; 
 </div>
 <div id="sidebar"></div>
 <div id="graph-container"><canvas id="graph"></canvas></div>
+<div id="node-tooltip"></div>
 <script src="https://unpkg.com/litegraph.js/build/litegraph.min.js"></script>
 <script>
 var graph = new LGraph();
 var container = document.getElementById('graph-container');
 var canvasElement = document.getElementById('graph');
 var canvas = new LGraphCanvas(canvasElement, graph);
+var tooltipElem = document.getElementById('node-tooltip');
+var tooltipTimer = null;
+var hoveredNode = null;
 
 function fitCanvas(){
   var rect = container.getBoundingClientRect();
@@ -37,6 +42,33 @@ function fitCanvas(){
 }
 window.addEventListener('resize', fitCanvas);
 fitCanvas();
+
+canvasElement.addEventListener('mousemove', function(ev){
+  var pos = canvas.convertEventToCanvasOffset(ev);
+  var node = graph.getNodeOnPos(pos[0], pos[1]);
+  if(node !== hoveredNode){
+    if(tooltipTimer){ clearTimeout(tooltipTimer); }
+    tooltipElem.style.display = 'none';
+    hoveredNode = node;
+    if(node && node.constructor.tooltip){
+      tooltipTimer = setTimeout(function(){
+        tooltipElem.textContent = node.constructor.tooltip;
+        tooltipElem.style.left = (ev.clientX + 10)+'px';
+        tooltipElem.style.top = (ev.clientY + 10)+'px';
+        tooltipElem.style.display = 'block';
+      }, 600);
+    }
+  } else if(tooltipElem.style.display !== 'none'){
+    tooltipElem.style.left = (ev.clientX + 10)+'px';
+    tooltipElem.style.top = (ev.clientY + 10)+'px';
+  }
+});
+
+canvasElement.addEventListener('mouseleave', function(){
+  if(tooltipTimer){ clearTimeout(tooltipTimer); tooltipTimer = null; }
+  tooltipElem.style.display = 'none';
+  hoveredNode = null;
+});
 
 // remove default browser nodes and builtins
 if (LiteGraph.clearRegisteredTypes) {
@@ -158,6 +190,7 @@ function registerSpec(spec){
     });
   }
   NodeClass.title = spec.title || type;
+  NodeClass.tooltip = spec.tooltip || '';
   NodeClass.prototype.serialize_widgets = true;
   LiteGraph.registerNodeType(type, NodeClass);
   addSidebarItem(type, NodeClass.title, category);
