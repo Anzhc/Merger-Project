@@ -1,6 +1,6 @@
 from ..utils import get_params
 
-NODE_TYPE = 'merge_methods/subtract'
+NODE_TYPE = 'merge_methods/add_subtract'
 NODE_CATEGORY = 'Merge method'
 
 
@@ -8,7 +8,7 @@ def execute(node, inputs):
     params = get_params(node)
     alpha = float(params.get('alpha', 1.0))
     if len(inputs) < 2:
-        raise ValueError('Subtract node requires two inputs')
+        raise ValueError('Add/Subtract node requires two inputs')
     m1, m2 = inputs[0], inputs[1]
     d1 = m1['data'] if isinstance(m1, dict) else m1
     d2 = m2['data'] if isinstance(m2, dict) else m2
@@ -18,7 +18,7 @@ def execute(node, inputs):
     for k in keys:
         v1 = d1.get(k, 0)
         v2 = d2.get(k, 0)
-        result[k] = v1 - v2 * alpha
+        result[k] = v1 + v2 * alpha
     fmt = m1.get('format', 'pt') if isinstance(m1, dict) else 'pt'
     return {'data': result, 'format': fmt, 'dtype': dtype}
 
@@ -27,7 +27,7 @@ def get_spec():
     """Return UI specification for this node."""
     return {
         'type': NODE_TYPE,
-        'title': 'Subtract',
+        'title': 'Add/Subtract',
         'category': 'merge_methods',
         'inputs': [
             {'name': 'A', 'type': 'model'},
@@ -39,7 +39,7 @@ def get_spec():
                 'kind': 'slider',
                 'name': 'Alpha',
                 'bind': 'alpha',
-                'options': {'min': 0, 'max': 1, 'step': 0.01},
+                'options': {'min': -1, 'max': 1, 'step': 0.01},
             }
         ],
         'properties': {'alpha': 1.0},

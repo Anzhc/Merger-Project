@@ -42,7 +42,7 @@ def get_spec():
                 'kind': 'slider',
                 'name': 'Alpha',
                 'bind': 'alpha',
-                'options': {'min': 0, 'max': 1, 'step': 0.01},
+                'options': {'min': -1, 'max': 1, 'step': 0.01},
             }
         ],
         'properties': {'alpha': 1.0},
