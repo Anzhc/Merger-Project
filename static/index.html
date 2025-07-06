@@ -182,20 +182,20 @@ canvas.canvas.addEventListener('contextmenu', function(ev){
 });
 
 // Run button
-var history = [];
+var graphHistory = [];
 var restoring = false;
 function pushHistory(){
   if(restoring) return;
-  history.push(graph.serialize());
-  if(history.length > 20) history.shift();
+  graphHistory.push(graph.serialize());
+  if(graphHistory.length > 20) graphHistory.shift();
 }
 graph.onAfterChange = pushHistory;
 pushHistory();
 
 function undoHistory(){
-  if(history.length < 2) return;
-  history.pop();
-  var state = history[history.length-1];
+  if(graphHistory.length < 2) return;
+  graphHistory.pop();
+  var state = graphHistory[graphHistory.length-1];
   restoring = true;
   graph.clear();
   graph.configure(state);
