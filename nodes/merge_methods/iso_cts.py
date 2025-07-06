@@ -50,11 +50,19 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     U_star = torch.cat(comps_u, dim=1)
     V_star = torch.cat(comps_v, dim=0)
 
-    # Whitening using SVD (Eq.11)
-    Pu, _, Qu = torch.linalg.svd(U_star, full_matrices=False)
-    Pv, _, Qv = torch.linalg.svd(V_star, full_matrices=False)
-    U_star = Pu @ Qu
-    V_star = Pv @ Qv
+    # Whitening using SVD (Eq.11). Fall back to QR if SVD fails to converge.
+    try:
+        Pu, _, Qu = torch.linalg.svd(U_star, full_matrices=False)
+        U_star = Pu @ Qu
+    except Exception:
+        U_star, _ = torch.linalg.qr(U_star, mode='reduced')
+
+    try:
+        Pv, _, Qv = torch.linalg.svd(V_star, full_matrices=False)
+        V_star = Pv @ Qv
+    except Exception:
+        V_star_t, _ = torch.linalg.qr(V_star.T, mode='reduced')
+        V_star = V_star_t.T
 
     r_final = U_star.shape[1]
     iso = sum_sigma / r_final
