@@ -4,15 +4,15 @@ NODE_TYPE = 'merge_methods/iso_c'
 NODE_CATEGORY = 'Merge method'
 
 
-def _svd_merge(tensors):
+def _svd_merge(tensors, dtype):
     """Apply Iso-C merge to a list of tensors of the same shape"""
     summed = sum(tensors)
     shape = summed.shape
-    mat = summed.reshape(shape[0], -1)
+    mat = summed.to(torch.float32).reshape(shape[0], -1)
     u, s, v = torch.linalg.svd(mat, full_matrices=False)
     iso = s.mean()
     merged = iso * (u @ v)
-    return merged.reshape(shape)
+    return merged.reshape(shape).to(dtype)
 
 
 def execute(node, inputs):
@@ -57,7 +57,7 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[k] = _svd_merge(tensors)
+            result[k] = _svd_merge(tensors, dtype or torch.float32)
         else:
             continue
 

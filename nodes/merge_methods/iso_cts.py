@@ -5,11 +5,11 @@ NODE_TYPE = 'merge_methods/iso_cts'
 NODE_CATEGORY = 'Merge method'
 
 
-def _iso_cts_merge(tensors, k):
+def _iso_cts_merge(tensors, k, dtype):
     """Apply Iso-CTS merge to list of tensors."""
     summed = sum(tensors)
     shape = summed.shape
-    mat = summed.reshape(shape[0], -1)
+    mat = summed.to(torch.float32).reshape(shape[0], -1)
     m, n = mat.shape
     r = min(m, n)
     u, s, v = torch.linalg.svd(mat, full_matrices=False)
@@ -18,7 +18,7 @@ def _iso_cts_merge(tensors, k):
         # fall back to Iso-C
         iso = s.mean()
         merged = iso * (u @ v)
-        return merged.reshape(shape)
+        return merged.reshape(shape).to(dtype)
     u_cm = u[:, :k]
     v_cm = v[:k, :]
     sigma_cm = s[:k]
@@ -31,7 +31,7 @@ def _iso_cts_merge(tensors, k):
     s_per = remaining // t if t else 0
     if s_per > 0:
         for tmat in tensors:
-            tm = tmat.reshape(shape[0], -1)
+            tm = tmat.to(torch.float32).reshape(shape[0], -1)
             resid = tm - u_cm @ (u_cm.T @ tm)
             ru, rs, rv = torch.linalg.svd(resid, full_matrices=False)
             comps_u.append(ru[:, :s_per])
@@ -46,7 +46,7 @@ def _iso_cts_merge(tensors, k):
     r_final = U_star.shape[1]
     iso = sum_sigma / r_final
     merged = iso * (U_star @ V_star)
-    return merged.reshape(shape)
+    return merged.reshape(shape).to(dtype)
 
 
 def execute(node, inputs):
@@ -88,7 +88,7 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[kname] = _iso_cts_merge(tensors, k)
+            result[kname] = _iso_cts_merge(tensors, k, dtype or torch.float32)
     return {'data': result, 'format': fmt, 'dtype': dtype}
 
 
