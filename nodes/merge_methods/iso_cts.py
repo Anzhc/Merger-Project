@@ -17,16 +17,16 @@ NODE_TYPE = 'merge_methods/iso_cts'
 NODE_CATEGORY = 'Merge method'
 
 
-def _iso_cts_merge(tensors, frac, out_dtype):
-    """Return the Iso-CTS update matrix for a set of task deltas."""
-    summed = sum(tensors)
+def _iso_cts_merge(tensors, frac, out_dtype, device):
+    """Return the Iso-CTS update matrix for a set of task deltas on ``device``."""
+    summed = sum(t.to(device=device, dtype=out_dtype) for t in tensors)
     shape = summed.shape
 
     # Bias and embedding parameters are treated by simple averaging.
     if len(shape) < 2:
-        return (summed / len(tensors)).to(out_dtype)
+        return summed / len(tensors)
 
-    mat = summed.to(torch.float32).reshape(shape[0], -1)
+    mat = summed.reshape(shape[0], -1)
     m, n = mat.shape
     r = min(m, n)
     u, s, v = _safe_svd(mat, full_matrices=False)
@@ -36,7 +36,7 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     if k == 0:
         iso = s.mean()
         delta = iso * (u @ v)
-        return delta.reshape(shape).to(out_dtype)
+        return delta.reshape(shape)
 
     u_cm = u[:, :k]
     v_cm = v[:k, :]
@@ -55,7 +55,7 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     for tmat, count in zip(tensors, s_counts):
         if count == 0:
             continue
-        tm = tmat.to(torch.float32).reshape(shape[0], -1)
+        tm = tmat.to(device=device, dtype=out_dtype).reshape(shape[0], -1)
         # Project onto the subspace orthogonal to the common one (Eq.10)
         resid = tm - u_cm @ (u_cm.T @ tm)
         ru, rs, rv = _safe_svd(resid, full_matrices=False)
@@ -86,12 +86,14 @@ def _iso_cts_merge(tensors, frac, out_dtype):
         r_total = U_star.shape[1]
     iso = sum_sigma / r_total
     delta = iso * (U_star @ V_star)
-    return delta.reshape(shape).to(out_dtype)
+    return delta.reshape(shape)
 
 
 def execute(node, inputs):
     params = get_params(node)
     frac = float(params.get('fraction', 0.8))
+    device_idx = int(params.get('cuda', 0))
+    device = torch.device(f'cuda:{device_idx}') if torch.cuda.is_available() else torch.device('cpu')
     if len(inputs) < 2:
         raise ValueError('Iso-CTS requires at least two input models')
     dicts = []
@@ -136,7 +138,7 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[kname] = _iso_cts_merge(tensors, frac, torch_dtype)
+            result[kname] = _iso_cts_merge(tensors, frac, torch_dtype, device).to(torch_dtype).cpu()
     return {'data': result, 'format': fmt, 'dtype': dtype_str}
 
 
@@ -155,7 +157,13 @@ def get_spec():
                 'bind': 'fraction',
                 'options': {'min': 0, 'max': 1, 'step': 0.05},
             },
+            {
+                'kind': 'number',
+                'name': 'CUDA device',
+                'bind': 'cuda',
+                'options': {'min': 0, 'step': 1},
+            },
         ],
-        'properties': {'fraction': 0.8},
+        'properties': {'fraction': 0.8, 'cuda': 0},
         'tooltip': 'Iso-CTS update using common and task-specific subspaces',
     }

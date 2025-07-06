@@ -1,4 +1,5 @@
 import torch
+from ..utils import get_params
 
 
 def _safe_svd(mat, full_matrices=False):
@@ -16,27 +17,31 @@ NODE_TYPE = 'merge_methods/iso_c'
 NODE_CATEGORY = 'Merge method'
 
 
-def _iso_c_merge(tensors, out_dtype):
-    """Return the Iso-C update matrix given a list of task deltas."""
-    summed = sum(tensors)
+def _iso_c_merge(tensors, out_dtype, device):
+    """Return the Iso-C update matrix given a list of task deltas on ``device``."""
+    summed = sum(t.to(device=device, dtype=out_dtype) for t in tensors)
     shape = summed.shape
 
     # For 1D parameters (biases, embeddings) the SVD reduces to
     # averaging, which matches the formulation in the paper.
     if len(shape) < 2:
-        return (summed / len(tensors)).to(out_dtype)
+        return summed / len(tensors)
 
-    mat = summed.to(torch.float32).reshape(shape[0], -1)
+    mat = summed.reshape(shape[0], -1)
     u, s, v = _safe_svd(mat, full_matrices=False)
 
     # Isotropic scaling factor (Eq.7)
     iso = s.mean()
 
     delta = iso * (u @ v)
-    return delta.reshape(shape).to(out_dtype)
+    return delta.reshape(shape)
 
 
 def execute(node, inputs):
+    params = get_params(node)
+    device_idx = int(params.get('cuda', 0))
+    device = torch.device(f'cuda:{device_idx}') if torch.cuda.is_available() else torch.device('cpu')
+
     if len(inputs) < 2:
         raise ValueError('Iso-C requires at least two input models')
 
@@ -86,7 +91,7 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[k] = _iso_c_merge(tensors, torch_dtype)
+            result[k] = _iso_c_merge(tensors, torch_dtype, device).to(torch_dtype).cpu()
         else:
             continue
 
@@ -101,6 +106,14 @@ def get_spec():
         'category': 'merge_methods',
         'inputs': inputs,
         'outputs': [{'name': 'model', 'type': 'model'}],
-        'properties': {},
+        'widgets': [
+            {
+                'kind': 'number',
+                'name': 'CUDA device',
+                'bind': 'cuda',
+                'options': {'min': 0, 'step': 1},
+            }
+        ],
+        'properties': {'cuda': 0},
         'tooltip': 'Compute Iso-C update (delta) in the common subspace',
     }
