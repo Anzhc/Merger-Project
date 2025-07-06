@@ -1,0 +1,77 @@
+import torch
+
+NODE_TYPE = 'merge_methods/iso_c'
+NODE_CATEGORY = 'Merge method'
+
+
+def _svd_merge(tensors):
+    """Apply Iso-C merge to a list of tensors of the same shape"""
+    summed = sum(tensors)
+    shape = summed.shape
+    mat = summed.reshape(shape[0], -1)
+    u, s, v = torch.linalg.svd(mat, full_matrices=False)
+    iso = s.mean()
+    merged = iso * (u @ v)
+    return merged.reshape(shape)
+
+
+def execute(node, inputs):
+    if len(inputs) < 2:
+        raise ValueError('Iso-C requires at least two input models')
+
+    # collect parameter dictionaries
+    dicts = []
+    dtype = None
+    fmt = 'pt'
+    for inp in inputs:
+        if isinstance(inp, dict):
+            dicts.append(inp.get('data'))
+            dtype = dtype or inp.get('dtype')
+            fmt = inp.get('format', fmt)
+        else:
+            dicts.append(inp)
+
+    keys = set()
+    for d in dicts:
+        keys.update(d.keys())
+
+    result = {}
+    for k in keys:
+        ref = None
+        tensors = []
+        for d in dicts:
+            t = d.get(k)
+            if t is None:
+                if ref is None:
+                    # find reference tensor shape
+                    for other in dicts:
+                        if k in other:
+                            ref = torch.as_tensor(other[k])
+                            break
+                if ref is None:
+                    continue
+                t = torch.zeros_like(ref)
+            else:
+                t = torch.as_tensor(t)
+                if ref is None:
+                    ref = t
+            tensors.append(t)
+        if tensors:
+            result[k] = _svd_merge(tensors)
+        else:
+            continue
+
+    return {'data': result, 'format': fmt, 'dtype': dtype}
+
+
+def get_spec():
+    inputs = [{'name': chr(ord('A') + i), 'type': 'model'} for i in range(10)]
+    return {
+        'type': NODE_TYPE,
+        'title': 'Iso-C Merge',
+        'category': 'merge_methods',
+        'inputs': inputs,
+        'outputs': [{'name': 'model', 'type': 'model'}],
+        'properties': {},
+        'tooltip': 'Isotropic merging in common subspace',
+    }
