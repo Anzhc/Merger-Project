@@ -3,15 +3,11 @@ from ..utils import get_params
 
 
 def _safe_svd(mat, full_matrices=False):
-    """Return SVD using the gesvd driver when available."""
+    """Return SVD using the ``gesvd`` driver when available."""
     try:
-        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesvd')
-    except (TypeError, RuntimeError):
-        pass
-    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver="gesvd")
+    except Exception:
         return torch.linalg.svd(mat, full_matrices=full_matrices)
-    except RuntimeError:
-        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesdd')
 
 NODE_TYPE = 'merge_methods/iso_cts'
 NODE_CATEGORY = 'Merge method'
@@ -19,12 +15,12 @@ NODE_CATEGORY = 'Merge method'
 
 def _iso_cts_merge(tensors, frac, out_dtype, device):
     """Return the Iso-CTS update matrix for a set of task deltas on ``device``."""
-    summed = sum(t.to(device=device, dtype=out_dtype) for t in tensors)
+    summed = sum(t.to(device=device, dtype=torch.float32) for t in tensors)
     shape = summed.shape
 
     # Bias and embedding parameters are treated by simple averaging.
     if len(shape) < 2:
-        return summed / len(tensors)
+        return (summed / len(tensors)).to(out_dtype)
 
     mat = summed.reshape(shape[0], -1)
     m, n = mat.shape
@@ -36,7 +32,7 @@ def _iso_cts_merge(tensors, frac, out_dtype, device):
     if k == 0:
         iso = s.mean()
         delta = iso * (u @ v)
-        return delta.reshape(shape)
+        return delta.reshape(shape).to(out_dtype)
 
     u_cm = u[:, :k]
     v_cm = v[:k, :]
@@ -55,7 +51,7 @@ def _iso_cts_merge(tensors, frac, out_dtype, device):
     for tmat, count in zip(tensors, s_counts):
         if count == 0:
             continue
-        tm = tmat.to(device=device, dtype=out_dtype).reshape(shape[0], -1)
+        tm = tmat.to(device=device, dtype=torch.float32).reshape(shape[0], -1)
         # Project onto the subspace orthogonal to the common one (Eq.10)
         resid = tm - u_cm @ (u_cm.T @ tm)
         ru, rs, rv = _safe_svd(resid, full_matrices=False)
@@ -86,7 +82,7 @@ def _iso_cts_merge(tensors, frac, out_dtype, device):
         r_total = U_star.shape[1]
     iso = sum_sigma / r_total
     delta = iso * (U_star @ V_star)
-    return delta.reshape(shape)
+    return delta.reshape(shape).to(out_dtype)
 
 
 def execute(node, inputs):

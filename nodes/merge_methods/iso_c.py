@@ -3,29 +3,25 @@ from ..utils import get_params
 
 
 def _safe_svd(mat, full_matrices=False):
-    """Return SVD using the gesvd driver when available."""
+    """Return SVD using the ``gesvd`` driver when available."""
     try:
-        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesvd')
-    except (TypeError, RuntimeError):
-        pass
-    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver="gesvd")
+    except Exception:
         return torch.linalg.svd(mat, full_matrices=full_matrices)
-    except RuntimeError:
-        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesdd')
 
 NODE_TYPE = 'merge_methods/iso_c'
 NODE_CATEGORY = 'Merge method'
 
 
 def _iso_c_merge(tensors, out_dtype, device):
-    """Return the Iso-C update matrix given a list of task deltas on ``device``."""
-    summed = sum(t.to(device=device, dtype=out_dtype) for t in tensors)
+    """Return the Iso-C update matrix given task deltas on ``device``."""
+    summed = sum(t.to(device=device, dtype=torch.float32) for t in tensors)
     shape = summed.shape
 
     # For 1D parameters (biases, embeddings) the SVD reduces to
     # averaging, which matches the formulation in the paper.
     if len(shape) < 2:
-        return summed / len(tensors)
+        return (summed / len(tensors)).to(out_dtype)
 
     mat = summed.reshape(shape[0], -1)
     u, s, v = _safe_svd(mat, full_matrices=False)
@@ -34,7 +30,7 @@ def _iso_c_merge(tensors, out_dtype, device):
     iso = s.mean()
 
     delta = iso * (u @ v)
-    return delta.reshape(shape)
+    return delta.reshape(shape).to(out_dtype)
 
 
 def execute(node, inputs):
