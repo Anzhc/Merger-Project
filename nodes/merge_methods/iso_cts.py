@@ -142,7 +142,7 @@ def get_spec():
     inputs = [{'name': chr(ord('A') + i), 'type': 'model'} for i in range(10)]
     return {
         'type': NODE_TYPE,
-        'title': 'Iso-CTS Merge',
+        'title': 'Iso-CTS Merge (broken)',
         'category': 'merge_methods',
         'inputs': inputs,
         'outputs': [{'name': 'model', 'type': 'model'}],
