@@ -44,27 +44,13 @@ if (LiteGraph.clearRegisteredTypes) {
   LiteGraph.Nodes = {};
 }
 
-var nodeCategories = {};
-var contextMenuData = null;
 
 fetch('/node_specs').then(r => r.json()).then(function(specs){
   specs.forEach(function(spec){
     registerSpec(spec);
   });
-  buildContextMenuData();
 });
 
-function buildContextMenuData(){
-  contextMenuData = [];
-  for(const cat in nodeCategories){
-    var submenu = nodeCategories[cat].map(function(type){
-      var info = LiteGraph.registered_node_types[type];
-      var title = (info && info.title) || type;
-      return {content: title, nodeType: type};
-    });
-    contextMenuData.push({content: cat.replace(/_/g,' '), submenu: submenu});
-  }
-}
 
 function addSidebarItem(type, title){
   var sidebar = document.getElementById('sidebar');
@@ -132,8 +118,6 @@ function registerSpec(spec){
   NodeClass.title = spec.title || type;
   NodeClass.prototype.serialize_widgets = true;
   LiteGraph.registerNodeType(type, NodeClass);
-  if(!nodeCategories[category]){ nodeCategories[category] = []; }
-  nodeCategories[category].push(type);
   addSidebarItem(type, NodeClass.title);
 }
 
@@ -162,23 +146,9 @@ document.getElementById('graph').addEventListener('drop', function(ev){
   var pos = canvas.convertEventToCanvasOffset(ev);
   var node = LiteGraph.createNode(type);
   node.pos = [pos[0], pos[1]];
+  graph.beforeChange();
   graph.add(node);
-});
-
-canvas.canvas.addEventListener('contextmenu', function(ev){
-  ev.preventDefault();
-  var pos = canvas.convertEventToCanvasOffset(ev);
-  if(!contextMenuData){ return; }
-  var menu = contextMenuData.map(function(cat){
-    return {content: cat.content, submenu: cat.submenu.map(function(item){
-      return {content: item.content, callback: function(){
-        var node = LiteGraph.createNode(item.nodeType);
-        node.pos = pos.slice();
-        graph.add(node);
-      }};
-    })};
-  });
-  new LiteGraph.ContextMenu(menu, {event: ev});
+  graph.afterChange();
 });
 
 // Run button
