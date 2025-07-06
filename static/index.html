@@ -28,6 +28,32 @@ body, html {margin:0; padding:0; height:100%; overflow:hidden; background:#222; 
 <div id="node-tooltip"></div>
 <script src="https://unpkg.com/litegraph.js/build/litegraph.min.js"></script>
 <script>
+(function(){
+  const orig = LiteGraph.LGraphCanvas.prototype.drawNodeWidgets;
+  if(!orig) return;
+  LiteGraph.LGraphCanvas.prototype.drawNodeWidgets = function(node,posY,ctx,active){
+    if(node.widgets){
+      for(const w of node.widgets){
+        if((w.type === "text" || w.type === "string") && typeof w.value === "string"){
+          w.__orig_value = w.value;
+          w.value = w.value.split(/[\\/]/).pop();
+        }
+      }
+    }
+    const res = orig.call(this,node,posY,ctx,active);
+    if(node.widgets){
+      for(const w of node.widgets){
+        if(w.__orig_value !== undefined){
+          w.value = w.__orig_value;
+          delete w.__orig_value;
+        }
+      }
+    }
+    return res;
+  };
+})();
+</script>
+<script>
 var graph = new LGraph();
 var container = document.getElementById('graph-container');
 var canvasElement = document.getElementById('graph');
