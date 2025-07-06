@@ -5,44 +5,49 @@ NODE_TYPE = 'merge_methods/iso_cts'
 NODE_CATEGORY = 'Merge method'
 
 
-def _iso_cts_merge(tensors, k, dtype):
+def _iso_cts_merge(tensors, frac, dtype):
     """Apply Iso-CTS merge to list of tensors."""
     summed = sum(tensors)
     shape = summed.shape
+    if len(shape) < 2:
+        return (summed / len(tensors)).to(dtype)
+
     mat = summed.to(torch.float32).reshape(shape[0], -1)
     m, n = mat.shape
     r = min(m, n)
     u, s, v = torch.linalg.svd(mat, full_matrices=False)
-    k = max(0, min(int(k), r))
+
+    k = max(0, min(int(r * float(frac)), r))
     if k == 0:
-        # fall back to Iso-C
         iso = s.mean()
         merged = iso * (u @ v)
         return merged.reshape(shape).to(dtype)
+
     u_cm = u[:, :k]
     v_cm = v[:k, :]
     sigma_cm = s[:k]
     sum_sigma = sigma_cm.sum()
     comps_u = [u_cm]
     comps_v = [v_cm]
-    s_list = []
+
     remaining = r - k
-    t = len(tensors)
-    s_per = remaining // t if t else 0
-    if s_per > 0:
+    num_tasks = len(tensors)
+    per_task = remaining // num_tasks if num_tasks else 0
+    if per_task > 0:
         for tmat in tensors:
             tm = tmat.to(torch.float32).reshape(shape[0], -1)
             resid = tm - u_cm @ (u_cm.T @ tm)
             ru, rs, rv = torch.linalg.svd(resid, full_matrices=False)
-            comps_u.append(ru[:, :s_per])
-            comps_v.append(rv[:s_per, :])
-            s_list.append(rs[:s_per])
-        sum_sigma += torch.cat(s_list).sum() if s_list else 0
+            comps_u.append(ru[:, :per_task])
+            comps_v.append(rv[:per_task, :])
+            sum_sigma += rs[:per_task].sum()
+
     U_star = torch.cat(comps_u, dim=1)
     V_star = torch.cat(comps_v, dim=0)
     U_star, _ = torch.linalg.qr(U_star, mode='reduced')
     V_star_t, _ = torch.linalg.qr(V_star.T, mode='reduced')
     V_star = V_star_t.T
+
     r_final = U_star.shape[1]
     iso = sum_sigma / r_final
     merged = iso * (U_star @ V_star)
@@ -51,7 +56,7 @@ def _iso_cts_merge(tensors, k, dtype):
 
 def execute(node, inputs):
     params = get_params(node)
-    k = float(params.get('k', 1))
+    frac = float(params.get('fraction', 0.8))
     if len(inputs) < 2:
         raise ValueError('Iso-CTS requires at least two input models')
     dicts = []
@@ -88,7 +93,7 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[kname] = _iso_cts_merge(tensors, k, dtype or torch.float32)
+            result[kname] = _iso_cts_merge(tensors, frac, dtype or torch.float32)
     return {'data': result, 'format': fmt, 'dtype': dtype}
 
 
@@ -101,8 +106,13 @@ def get_spec():
         'inputs': inputs,
         'outputs': [{'name': 'model', 'type': 'model'}],
         'widgets': [
-            {'kind': 'number', 'name': 'k', 'bind': 'k', 'options': {'min': 0, 'step': 1}},
+            {
+                'kind': 'slider',
+                'name': 'Common fraction',
+                'bind': 'fraction',
+                'options': {'min': 0, 'max': 1, 'step': 0.05},
+            },
         ],
-        'properties': {'k': 1},
+        'properties': {'fraction': 0.8},
         'tooltip': 'Iso-CTS merge with common and task-specific subspaces',
     }
