@@ -60,6 +60,7 @@ params = get_params(node)
   - **`textarea`** – multiline text field.
 - `properties` (dict): default property values for new instances of the node.
 - `help` (string, optional): description shown as a tooltip in the editor.
+- `tooltip` (string, optional): text displayed when hovering over the node.
 - `size` (list, optional): [width, height] defining the node's default dimensions.
 - `color` (string, optional): CSS color used for the node background.
   
@@ -91,6 +92,7 @@ def get_spec():
             {'kind': 'text', 'name': 'Value', 'bind': 'value'},
         ],
         'properties': {'value': ''},
+        'tooltip': 'Displays the provided value',
     }
 ```
 

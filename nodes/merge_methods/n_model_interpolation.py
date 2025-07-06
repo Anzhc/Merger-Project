@@ -81,4 +81,5 @@ def get_spec():
             }
         ],
         'properties': {'weights': ''},
+        'tooltip': 'sum(w_i * model_i) / sum(w_i)',
     }

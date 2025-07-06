@@ -46,4 +46,5 @@ def get_spec():
             }
         ],
         'properties': {'alpha': 1.0},
+        'tooltip': 'A + (B - C) * alpha',
     }
