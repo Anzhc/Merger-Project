@@ -1,6 +1,7 @@
 from ..utils import get_params
 
 NODE_TYPE = 'merge_methods/difference_merge'
+NODE_CATEGORY = 'Merge method'
 
 
 def execute(node, inputs):

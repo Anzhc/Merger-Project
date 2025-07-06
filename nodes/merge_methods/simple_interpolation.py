@@ -1,6 +1,7 @@
 from ..utils import get_params
 
 NODE_TYPE = 'merge_methods/simple_interpolation'
+NODE_CATEGORY = 'Merge method'
 
 def execute(node, inputs):
     params = get_params(node)

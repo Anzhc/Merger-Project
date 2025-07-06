@@ -4,6 +4,7 @@ from safetensors.torch import load_file
 from ..utils import get_params
 
 NODE_TYPE = 'model_loading/load_model'
+NODE_CATEGORY = 'Model Loading'
 
 def execute(node, inputs):
     params = get_params(node)
