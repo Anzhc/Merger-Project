@@ -20,6 +20,7 @@ def load_nodes():
             mod_name = rel.replace(os.sep, '.')[:-3]
             module = importlib.import_module(mod_name)
             node_type = getattr(module, 'NODE_TYPE', None)
+            node_category = getattr(module, 'NODE_CATEGORY', None)
             func = getattr(module, 'execute', None)
             spec_func = getattr(module, 'get_spec', None)
             if node_type and callable(func):
@@ -29,6 +30,10 @@ def load_nodes():
                     if 'type' not in spec:
                         spec['type'] = node_type
                     spec.setdefault('category', node_type.split('/')[0])
+                    if node_category:
+                        spec['node_category'] = node_category
+                    else:
+                        spec.setdefault('node_category', spec['category'])
                     specs.append(spec)
     return ops, specs
 

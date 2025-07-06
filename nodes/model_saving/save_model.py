@@ -4,6 +4,7 @@ from safetensors.torch import save_file
 from ..utils import get_params
 
 NODE_TYPE = 'model_saving/save_model'
+NODE_CATEGORY = 'Model Saving'
 
 def execute(node, inputs):
     params = get_params(node)

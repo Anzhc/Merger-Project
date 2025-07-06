@@ -24,8 +24,9 @@ Any `.py` file placed somewhere within `nodes` (except those starting with `_`) 
 Each node module must define the following:
 
 1. **`NODE_TYPE`** – a unique string identifier. The prefix before the slash is treated as the category, e.g. `"model_loading/load_model"`.
-2. **`execute(node, inputs)`** – a function that receives the node JSON and a list of input values. It must return the value that represents the node's output.
-3. **`get_spec()`** – returns a dictionary describing the node's UI in the editor. This specification is used by `static/index.html` to build the LiteGraph node class on the client side.
+2. **`NODE_CATEGORY`** – user facing label used to group nodes in the editor sidebar, such as `"Merge method"` or `"Model Loading"`.
+3. **`execute(node, inputs)`** – a function that receives the node JSON and a list of input values. It must return the value that represents the node's output.
+4. **`get_spec()`** – returns a dictionary describing the node's UI in the editor. This specification is used by `static/index.html` to build the LiteGraph node class on the client side.
 
 A helper function `get_params` is available in `nodes/utils.py` to extract properties stored on a node:
 
@@ -41,6 +42,7 @@ params = get_params(node)
 - `type` (string): must match `NODE_TYPE`.
 - `title` (string): human readable name shown in the editor sidebar.
 - `category` (string): optional; defaults to the text before the `/` in `type`.
+- `node_category` (string, optional): human friendly label shown in the sidebar. Defaults to `category` if omitted.
 - `inputs` (list): definitions of input slots. Each item is `{"name": <str>, "type": <str>}`.
 - `outputs` (list): definitions of output slots in the same format as inputs.
 - `widgets` (list): UI elements displayed on the node. Supported kinds in the current implementation are:
@@ -70,6 +72,7 @@ A minimal node might look like this:
 from ..utils import get_params
 
 NODE_TYPE = 'example/sample'
+NODE_CATEGORY = 'Example'
 
 def execute(node, inputs):
     params = get_params(node)
@@ -91,5 +94,5 @@ def get_spec():
     }
 ```
 
-Save the file as `Model_merger_2/nodes/example/sample.py`. When the server starts, `app.py` will import it automatically and the new node will appear in the editor under the **example** category.
+Save the file as `Model_merger_2/nodes/example/sample.py`. When the server starts, `app.py` will import it automatically and the new node will appear in the editor under the **Example** category header.
 
