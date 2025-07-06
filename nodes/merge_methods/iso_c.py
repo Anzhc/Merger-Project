@@ -5,17 +5,23 @@ NODE_CATEGORY = 'Merge method'
 
 
 def _iso_c_merge(tensors, out_dtype):
-    """Apply Iso-C merge to a list of tensors."""
+    """Return the Iso-C update matrix given a list of task deltas."""
     summed = sum(tensors)
     shape = summed.shape
+
+    # For 1D parameters (biases, embeddings) the SVD reduces to
+    # averaging, which matches the formulation in the paper.
     if len(shape) < 2:
         return (summed / len(tensors)).to(out_dtype)
 
     mat = summed.to(torch.float32).reshape(shape[0], -1)
     u, s, v = torch.linalg.svd(mat, full_matrices=False)
+
+    # Isotropic scaling factor (Eq.7)
     iso = s.mean()
-    merged = iso * (u @ v)
-    return merged.reshape(shape).to(out_dtype)
+
+    delta = iso * (u @ v)
+    return delta.reshape(shape).to(out_dtype)
 
 
 def execute(node, inputs):
@@ -84,5 +90,5 @@ def get_spec():
         'inputs': inputs,
         'outputs': [{'name': 'model', 'type': 'model'}],
         'properties': {},
-        'tooltip': 'Isotropic merging in common subspace',
+        'tooltip': 'Compute Iso-C update (delta) in the common subspace',
     }

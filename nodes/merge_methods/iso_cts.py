@@ -6,9 +6,11 @@ NODE_CATEGORY = 'Merge method'
 
 
 def _iso_cts_merge(tensors, frac, out_dtype):
-    """Apply Iso-CTS merge to a list of tensors."""
+    """Return the Iso-CTS update matrix for a set of task deltas."""
     summed = sum(tensors)
     shape = summed.shape
+
+    # Bias and embedding parameters are treated by simple averaging.
     if len(shape) < 2:
         return (summed / len(tensors)).to(out_dtype)
 
@@ -17,11 +19,12 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     r = min(m, n)
     u, s, v = torch.linalg.svd(mat, full_matrices=False)
 
+    # Size of the common subspace
     k = max(0, min(int(r * float(frac)), r))
     if k == 0:
         iso = s.mean()
-        merged = iso * (u @ v)
-        return merged.reshape(shape).to(out_dtype)
+        delta = iso * (u @ v)
+        return delta.reshape(shape).to(out_dtype)
 
     u_cm = u[:, :k]
     v_cm = v[:k, :]
@@ -30,28 +33,33 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     comps_u = [u_cm]
     comps_v = [v_cm]
 
+    # Number of task-specific components per task
     remaining = r - k
     num_tasks = len(tensors)
-    per_task = remaining // num_tasks if num_tasks else 0
-    if per_task > 0:
+    s_per_task = remaining // num_tasks if num_tasks else 0
+    if s_per_task > 0:
         for tmat in tensors:
             tm = tmat.to(torch.float32).reshape(shape[0], -1)
+            # Project onto the subspace orthogonal to the common one (Eq.10)
             resid = tm - u_cm @ (u_cm.T @ tm)
             ru, rs, rv = torch.linalg.svd(resid, full_matrices=False)
-            comps_u.append(ru[:, :per_task])
-            comps_v.append(rv[:per_task, :])
-            sum_sigma += rs[:per_task].sum()
+            comps_u.append(ru[:, :s_per_task])
+            comps_v.append(rv[:s_per_task, :])
+            sum_sigma += rs[:s_per_task].sum()
 
     U_star = torch.cat(comps_u, dim=1)
     V_star = torch.cat(comps_v, dim=0)
-    U_star, _ = torch.linalg.qr(U_star, mode='reduced')
-    V_star_t, _ = torch.linalg.qr(V_star.T, mode='reduced')
-    V_star = V_star_t.T
+
+    # Whitening using SVD (Eq.11)
+    Pu, _, Qu = torch.linalg.svd(U_star, full_matrices=False)
+    Pv, _, Qv = torch.linalg.svd(V_star, full_matrices=False)
+    U_star = Pu @ Qu
+    V_star = Pv @ Qv
 
     r_final = U_star.shape[1]
     iso = sum_sigma / r_final
-    merged = iso * (U_star @ V_star)
-    return merged.reshape(shape).to(out_dtype)
+    delta = iso * (U_star @ V_star)
+    return delta.reshape(shape).to(out_dtype)
 
 
 def execute(node, inputs):
@@ -122,5 +130,5 @@ def get_spec():
             },
         ],
         'properties': {'fraction': 0.8},
-        'tooltip': 'Iso-CTS merge with common and task-specific subspaces',
+        'tooltip': 'Iso-CTS update using common and task-specific subspaces',
     }
