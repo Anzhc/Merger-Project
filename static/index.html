@@ -161,7 +161,7 @@ function pushHistory(){
   if(graphHistory.length > 20) graphHistory.shift();
   redoHistory.length = 0;
 }
-graph.onAfterChange = pushHistory;
+graph.onBeforeChange = pushHistory;
 pushHistory();
 
 function undoHistory(){
