@@ -182,13 +182,82 @@ canvas.canvas.addEventListener('contextmenu', function(ev){
 });
 
 // Run button
+var history = [];
+var restoring = false;
+function pushHistory(){
+  if(restoring) return;
+  history.push(graph.serialize());
+  if(history.length > 20) history.shift();
+}
+graph.onAfterChange = pushHistory;
+pushHistory();
+
+function undoHistory(){
+  if(history.length < 2) return;
+  history.pop();
+  var state = history[history.length-1];
+  restoring = true;
+  graph.clear();
+  graph.configure(state);
+  if(graph._nodes) graph._nodes.forEach(syncNodeWidgets);
+  restoring = false;
+  canvas.setDirty(true, true);
+}
+
+document.addEventListener('keydown', function(ev){
+  canvas.processKey(ev);
+  if(ev.ctrlKey){
+    if(ev.key === 'z'){ undoHistory(); ev.preventDefault(); }
+    if(ev.key === 'c'){ canvas.copyToClipboard(); ev.preventDefault(); }
+    if(ev.key === 'v'){ canvas.pasteFromClipboard(); ev.preventDefault(); }
+  }
+});
+document.addEventListener('keyup', function(ev){ canvas.processKey(ev); });
+
 document.getElementById('run').onclick = function(){
   var data = graph.serialize();
-  fetch('/run', {
+  fetch('/run_stream', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify(data)
-  }).then(r=>r.json()).then(d=>alert('Finished'));
+  }).then(function(resp){
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var last = null;
+    function process(line){
+      if(!line.trim()) return;
+      var info = JSON.parse(line);
+      if(info.node !== undefined){
+        if(last){ last.boxcolor = last._prevBoxColor || null; }
+        var node = graph.getNodeById(info.node);
+        if(node){
+          node._prevBoxColor = node.boxcolor;
+          node.boxcolor = '#0f0';
+          last = node;
+          canvas.draw(true,false);
+        }
+      } else if(info.status === 'done'){
+        if(last){ last.boxcolor = last._prevBoxColor || null; }
+        canvas.draw(true,false);
+        alert('Finished');
+      }
+    }
+    function read(){
+      reader.read().then(function(result){
+        if(result.done){
+          if(buffer) process(buffer);
+          return;
+        }
+        buffer += decoder.decode(result.value, {stream:true});
+        var lines = buffer.split('\n');
+        buffer = lines.pop();
+        lines.forEach(process);
+        read();
+      });
+    }
+    read();
+  });
 };
 
 document.getElementById('save').onclick = function(){

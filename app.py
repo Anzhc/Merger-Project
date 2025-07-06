@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import tkinter as tk
 from tkinter import filedialog
 import json
@@ -163,6 +163,63 @@ def run_graph():
         values[nid] = op(node, input_values)
 
     return jsonify({'status': 'ok'})
+
+
+@app.route('/run_stream', methods=['POST'])
+def run_graph_stream():
+    data = request.get_json()
+    nodes = {n['id']: n for n in data.get('nodes', [])}
+
+    links_raw = data.get('links', data.get('edges', {}))
+    edges = []
+    if isinstance(links_raw, dict):
+        for link in links_raw.values():
+            if isinstance(link, list) and len(link) >= 5:
+                edges.append({'from': link[1], 'to': link[3]})
+    elif isinstance(links_raw, list):
+        for link in links_raw:
+            if isinstance(link, dict):
+                src = link.get('from') or link.get('origin_id')
+                dst = link.get('to') or link.get('target_id')
+                if src is not None and dst is not None:
+                    edges.append({'from': src, 'to': dst})
+            elif isinstance(link, list) and len(link) >= 5:
+                edges.append({'from': link[1], 'to': link[3]})
+
+    incoming = {nid: [] for nid in nodes}
+    outgoing = {nid: [] for nid in nodes}
+    for e in edges:
+        src = e['from']
+        dst = e['to']
+        if src not in nodes or dst not in nodes:
+            continue
+        outgoing[src].append(dst)
+        incoming[dst].append(src)
+
+    remaining = {nid: len(deps) for nid, deps in incoming.items()}
+    queue = [nid for nid, cnt in remaining.items() if cnt == 0]
+    values = {}
+
+    order = []
+    while queue:
+        nid = queue.pop(0)
+        order.append(nid)
+        for tgt in outgoing[nid]:
+            remaining[tgt] -= 1
+            if remaining[tgt] == 0:
+                queue.append(tgt)
+
+    def generate():
+        for nid in order:
+            node = nodes[nid]
+            op = OPERATIONS.get(node['type'])
+            if op:
+                input_values = [values[i] for i in incoming[nid]]
+                values[nid] = op(node, input_values)
+            yield json.dumps({'node': nid}) + '\n'
+        yield json.dumps({'status': 'done'}) + '\n'
+
+    return Response(generate(), mimetype='application/json')
 
 if __name__ == '__main__':
     app.run(debug=True)
