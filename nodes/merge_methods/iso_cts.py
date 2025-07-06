@@ -48,16 +48,20 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     # Number of task-specific components per task
     remaining = r - k
     num_tasks = len(tensors)
-    s_per_task = remaining // num_tasks if num_tasks else 0
-    if s_per_task > 0:
-        for tmat in tensors:
-            tm = tmat.to(torch.float32).reshape(shape[0], -1)
-            # Project onto the subspace orthogonal to the common one (Eq.10)
-            resid = tm - u_cm @ (u_cm.T @ tm)
-            ru, rs, rv = _safe_svd(resid, full_matrices=False)
-            comps_u.append(ru[:, :s_per_task])
-            comps_v.append(rv[:s_per_task, :])
-            sum_sigma += rs[:s_per_task].sum()
+    base = remaining // num_tasks if num_tasks else 0
+    extras = remaining % num_tasks if num_tasks else 0
+    s_counts = [base + (1 if i < extras else 0) for i in range(num_tasks)]
+
+    for tmat, count in zip(tensors, s_counts):
+        if count == 0:
+            continue
+        tm = tmat.to(torch.float32).reshape(shape[0], -1)
+        # Project onto the subspace orthogonal to the common one (Eq.10)
+        resid = tm - u_cm @ (u_cm.T @ tm)
+        ru, rs, rv = _safe_svd(resid, full_matrices=False)
+        comps_u.append(ru[:, :count])
+        comps_v.append(rv[:count, :])
+        sum_sigma += rs[:count].sum()
 
     U_star = torch.cat(comps_u, dim=1)
     V_star = torch.cat(comps_v, dim=0)
@@ -76,7 +80,7 @@ def _iso_cts_merge(tensors, frac, out_dtype):
         V_star_t, _ = torch.linalg.qr(V_star.T, mode='reduced')
         V_star = V_star_t.T
 
-    r_total = k + s_per_task * num_tasks
+    r_total = k + sum(s_counts)
     if r_total == 0:
         # Fallback in degenerate case
         r_total = U_star.shape[1]
