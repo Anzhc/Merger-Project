@@ -4,6 +4,7 @@ from tkinter import filedialog
 import json
 import importlib
 import os
+from memory_manager import MemoryManager
 
 
 def load_nodes():
@@ -142,7 +143,7 @@ def run_graph():
     # dependencies remain intact for execution
     remaining = {nid: len(deps) for nid, deps in incoming.items()}
     queue = [nid for nid, cnt in remaining.items() if cnt == 0]
-    values = {}
+    memory = MemoryManager(nodes.keys(), outgoing)
 
     processed = set()
     order = []
@@ -159,8 +160,9 @@ def run_graph():
         op = OPERATIONS.get(node['type'])
         if not op:
             continue
-        input_values = [values[i] for i in incoming[nid]]
-        values[nid] = op(node, input_values)
+        input_values = [memory.get(i) for i in incoming[nid]]
+        result = op(node, input_values)
+        memory.store(nid, result)
 
     return jsonify({'status': 'ok'})
 
@@ -198,7 +200,7 @@ def run_graph_stream():
 
     remaining = {nid: len(deps) for nid, deps in incoming.items()}
     queue = [nid for nid, cnt in remaining.items() if cnt == 0]
-    values = {}
+    memory = MemoryManager(nodes.keys(), outgoing)
 
     order = []
     while queue:
@@ -214,8 +216,9 @@ def run_graph_stream():
             node = nodes[nid]
             op = OPERATIONS.get(node['type'])
             if op:
-                input_values = [values[i] for i in incoming[nid]]
-                values[nid] = op(node, input_values)
+                input_values = [memory.get(i) for i in incoming[nid]]
+                result = op(node, input_values)
+                memory.store(nid, result)
             yield json.dumps({'node': nid}) + '\n'
         yield json.dumps({'status': 'done'}) + '\n'
 
