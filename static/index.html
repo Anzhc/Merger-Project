@@ -29,15 +29,27 @@ body, html {margin:0; padding:0; height:100%; overflow:hidden; background:#222; 
 <script src="https://unpkg.com/litegraph.js/build/litegraph.min.js"></script>
 <script>
 (function(){
-  const orig=LiteGraph.LGraphCanvas.prototype.drawNodeWidgets;
+  const orig = LiteGraph.LGraphCanvas.prototype.drawNodeWidgets;
   if(!orig) return;
-  LiteGraph.LGraphCanvas.prototype.drawNodeWidgets=function(node,posY,ctx,active){
-    let margin=15, H=LiteGraph.NODE_WIDGET_HEIGHT;
-    if(node.widgets) node.widgets.forEach(w=>{if((w.type=="text"||w.type=="string")&&typeof w.value=="string"){w.__align_right=true;}});
-    if(orig) orig.call(this,node,posY,ctx,active);
-    if(!node.widgets) return 0;
-    node.widgets.forEach(w=>{if(w.__align_right){let y=w.last_y||posY;if(w.y) y=w.y; let width=w.width||node.size[0]; ctx.save(); ctx.beginPath(); ctx.rect(margin,y,width-margin*2,H); ctx.clip(); ctx.fillStyle=LiteGraph.WIDGET_TEXT_COLOR; ctx.textAlign="right"; ctx.fillText(String(w.value), width-margin*2, y+H*0.7); ctx.restore(); }});
-    ctx.textAlign="left";
+  LiteGraph.LGraphCanvas.prototype.drawNodeWidgets = function(node,posY,ctx,active){
+    if(node.widgets){
+      for(const w of node.widgets){
+        if((w.type === "text" || w.type === "string") && typeof w.value === "string"){
+          w.__orig_value = w.value;
+          w.value = w.value.slice(-30);
+        }
+      }
+    }
+    const res = orig.call(this,node,posY,ctx,active);
+    if(node.widgets){
+      for(const w of node.widgets){
+        if(w.__orig_value !== undefined){
+          w.value = w.__orig_value;
+          delete w.__orig_value;
+        }
+      }
+    }
+    return res;
   };
 })();
 </script>
