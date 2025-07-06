@@ -1,24 +1,43 @@
 import torch
+from ..utils import get_params
+
+
+def _safe_svd(mat, full_matrices=False):
+    """Return SVD using the ``gesvd`` driver when available."""
+    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver="gesvd")
+    except Exception:
+        return torch.linalg.svd(mat, full_matrices=full_matrices)
 
 NODE_TYPE = 'merge_methods/iso_c'
 NODE_CATEGORY = 'Merge method'
 
 
-def _iso_c_merge(tensors, out_dtype):
-    """Apply Iso-C merge to a list of tensors."""
-    summed = sum(tensors)
+def _iso_c_merge(tensors, out_dtype, device):
+    """Return the Iso-C update matrix given task deltas on ``device``."""
+    summed = sum(t.to(device=device, dtype=torch.float32) for t in tensors)
     shape = summed.shape
+
+    # For 1D parameters (biases, embeddings) the SVD reduces to
+    # averaging, which matches the formulation in the paper.
     if len(shape) < 2:
         return (summed / len(tensors)).to(out_dtype)
 
-    mat = summed.to(torch.float32).reshape(shape[0], -1)
-    u, s, v = torch.linalg.svd(mat, full_matrices=False)
+    mat = summed.reshape(shape[0], -1)
+    u, s, v = _safe_svd(mat, full_matrices=False)
+
+    # Isotropic scaling factor (Eq.7)
     iso = s.mean()
-    merged = iso * (u @ v)
-    return merged.reshape(shape).to(out_dtype)
+
+    delta = iso * (u @ v)
+    return delta.reshape(shape).to(out_dtype)
 
 
 def execute(node, inputs):
+    params = get_params(node)
+    device_idx = int(params.get('cuda', 0))
+    device = torch.device(f'cuda:{device_idx}') if torch.cuda.is_available() else torch.device('cpu')
+
     if len(inputs) < 2:
         raise ValueError('Iso-C requires at least two input models')
 
@@ -68,7 +87,7 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[k] = _iso_c_merge(tensors, torch_dtype)
+            result[k] = _iso_c_merge(tensors, torch_dtype, device).to(torch_dtype).cpu()
         else:
             continue
 
@@ -79,10 +98,18 @@ def get_spec():
     inputs = [{'name': chr(ord('A') + i), 'type': 'model'} for i in range(10)]
     return {
         'type': NODE_TYPE,
-        'title': 'Iso-C Merge',
+        'title': 'Iso-C Merge (broken)',
         'category': 'merge_methods',
         'inputs': inputs,
         'outputs': [{'name': 'model', 'type': 'model'}],
-        'properties': {},
-        'tooltip': 'Isotropic merging in common subspace',
+        'widgets': [
+            {
+                'kind': 'number',
+                'name': 'CUDA device',
+                'bind': 'cuda',
+                'options': {'min': 0, 'step': 1},
+            }
+        ],
+        'properties': {'cuda': 0},
+        'tooltip': 'Compute Iso-C update (delta) in the common subspace',
     }
