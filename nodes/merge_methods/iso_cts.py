@@ -76,8 +76,11 @@ def _iso_cts_merge(tensors, frac, out_dtype):
         V_star_t, _ = torch.linalg.qr(V_star.T, mode='reduced')
         V_star = V_star_t.T
 
-    r_final = U_star.shape[1]
-    iso = sum_sigma / r_final
+    r_total = k + s_per_task * num_tasks
+    if r_total == 0:
+        # Fallback in degenerate case
+        r_total = U_star.shape[1]
+    iso = sum_sigma / r_total
     delta = iso * (U_star @ V_star)
     return delta.reshape(shape).to(out_dtype)
 
