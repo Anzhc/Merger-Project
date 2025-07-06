@@ -10,6 +10,7 @@ def execute(node, inputs):
     m1, m2 = inputs[0], inputs[1]
     d1 = m1['data'] if isinstance(m1, dict) else m1
     d2 = m2['data'] if isinstance(m2, dict) else m2
+    dtype = m1.get('dtype') if isinstance(m1, dict) else None
     result = {}
     for k in d1.keys():
         if k in d2:
@@ -20,7 +21,7 @@ def execute(node, inputs):
         if k not in d1:
             result[k] = d2[k]
     fmt = m1.get('format', 'pt') if isinstance(m1, dict) else 'pt'
-    return {'data': result, 'format': fmt}
+    return {'data': result, 'format': fmt, 'dtype': dtype}
 
 
 def get_spec():
