@@ -1,5 +1,17 @@
 import torch
 
+
+def _safe_svd(mat, full_matrices=False):
+    """Return SVD using the gesvd driver when available."""
+    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesvd')
+    except (TypeError, RuntimeError):
+        pass
+    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices)
+    except RuntimeError:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesdd')
+
 NODE_TYPE = 'merge_methods/iso_c'
 NODE_CATEGORY = 'Merge method'
 
@@ -15,7 +27,7 @@ def _iso_c_merge(tensors, out_dtype):
         return (summed / len(tensors)).to(out_dtype)
 
     mat = summed.to(torch.float32).reshape(shape[0], -1)
-    u, s, v = torch.linalg.svd(mat, full_matrices=False)
+    u, s, v = _safe_svd(mat, full_matrices=False)
 
     # Isotropic scaling factor (Eq.7)
     iso = s.mean()

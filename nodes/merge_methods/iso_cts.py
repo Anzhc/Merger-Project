@@ -1,6 +1,18 @@
 import torch
 from ..utils import get_params
 
+
+def _safe_svd(mat, full_matrices=False):
+    """Return SVD using the gesvd driver when available."""
+    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesvd')
+    except (TypeError, RuntimeError):
+        pass
+    try:
+        return torch.linalg.svd(mat, full_matrices=full_matrices)
+    except RuntimeError:
+        return torch.linalg.svd(mat, full_matrices=full_matrices, driver='gesdd')
+
 NODE_TYPE = 'merge_methods/iso_cts'
 NODE_CATEGORY = 'Merge method'
 
@@ -17,7 +29,7 @@ def _iso_cts_merge(tensors, frac, out_dtype):
     mat = summed.to(torch.float32).reshape(shape[0], -1)
     m, n = mat.shape
     r = min(m, n)
-    u, s, v = torch.linalg.svd(mat, full_matrices=False)
+    u, s, v = _safe_svd(mat, full_matrices=False)
 
     # Size of the common subspace
     k = max(0, min(int(r * float(frac)), r))
@@ -42,7 +54,7 @@ def _iso_cts_merge(tensors, frac, out_dtype):
             tm = tmat.to(torch.float32).reshape(shape[0], -1)
             # Project onto the subspace orthogonal to the common one (Eq.10)
             resid = tm - u_cm @ (u_cm.T @ tm)
-            ru, rs, rv = torch.linalg.svd(resid, full_matrices=False)
+            ru, rs, rv = _safe_svd(resid, full_matrices=False)
             comps_u.append(ru[:, :s_per_task])
             comps_v.append(rv[:s_per_task, :])
             sum_sigma += rs[:s_per_task].sum()
@@ -52,13 +64,13 @@ def _iso_cts_merge(tensors, frac, out_dtype):
 
     # Whitening using SVD (Eq.11). Fall back to QR if SVD fails to converge.
     try:
-        Pu, _, Qu = torch.linalg.svd(U_star, full_matrices=False)
+        Pu, _, Qu = _safe_svd(U_star, full_matrices=False)
         U_star = Pu @ Qu
     except Exception:
         U_star, _ = torch.linalg.qr(U_star, mode='reduced')
 
     try:
-        Pv, _, Qv = torch.linalg.svd(V_star, full_matrices=False)
+        Pv, _, Qv = _safe_svd(V_star, full_matrices=False)
         V_star = Pv @ Qv
     except Exception:
         V_star_t, _ = torch.linalg.qr(V_star.T, mode='reduced')
