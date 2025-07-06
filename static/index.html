@@ -153,19 +153,33 @@ document.getElementById('graph').addEventListener('drop', function(ev){
 
 // Run button
 var graphHistory = [];
+var redoHistory = [];
 var restoring = false;
 function pushHistory(){
   if(restoring) return;
   graphHistory.push(graph.serialize());
   if(graphHistory.length > 20) graphHistory.shift();
+  redoHistory.length = 0;
 }
 graph.onAfterChange = pushHistory;
 pushHistory();
 
 function undoHistory(){
   if(graphHistory.length < 2) return;
-  graphHistory.pop();
+  redoHistory.push(graphHistory.pop());
   var state = graphHistory[graphHistory.length-1];
+  restoring = true;
+  graph.clear();
+  graph.configure(state);
+  if(graph._nodes) graph._nodes.forEach(syncNodeWidgets);
+  restoring = false;
+  canvas.setDirty(true, true);
+}
+
+function redoHistoryAction(){
+  if(redoHistory.length === 0) return;
+  var state = redoHistory.pop();
+  graphHistory.push(state);
   restoring = true;
   graph.clear();
   graph.configure(state);
@@ -178,6 +192,7 @@ document.addEventListener('keydown', function(ev){
   canvas.processKey(ev);
   if(ev.ctrlKey){
     if(ev.key === 'z'){ undoHistory(); ev.preventDefault(); }
+    if(ev.key === 'y'){ redoHistoryAction(); ev.preventDefault(); }
     if(ev.key === 'c'){ canvas.copyToClipboard(); ev.preventDefault(); }
     if(ev.key === 'v'){ canvas.pasteFromClipboard(); ev.preventDefault(); }
   }
@@ -248,10 +263,14 @@ document.getElementById('load').onclick = function(){
     fetch('/load_graph?path='+encodeURIComponent(resp.path))
       .then(r=>r.json())
       .then(function(g){
+        restoring = true;
         graph.clear();
         graph.configure(g);
         if(graph._nodes)
           graph._nodes.forEach(syncNodeWidgets);
+        restoring = false;
+        graphHistory = [graph.serialize()];
+        redoHistory.length = 0;
       });
   });
 };
