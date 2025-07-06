@@ -5,12 +5,12 @@ NODE_TYPE = 'merge_methods/iso_cts'
 NODE_CATEGORY = 'Merge method'
 
 
-def _iso_cts_merge(tensors, frac, dtype):
-    """Apply Iso-CTS merge to list of tensors."""
+def _iso_cts_merge(tensors, frac, out_dtype):
+    """Apply Iso-CTS merge to a list of tensors."""
     summed = sum(tensors)
     shape = summed.shape
     if len(shape) < 2:
-        return (summed / len(tensors)).to(dtype)
+        return (summed / len(tensors)).to(out_dtype)
 
     mat = summed.to(torch.float32).reshape(shape[0], -1)
     m, n = mat.shape
@@ -21,7 +21,7 @@ def _iso_cts_merge(tensors, frac, dtype):
     if k == 0:
         iso = s.mean()
         merged = iso * (u @ v)
-        return merged.reshape(shape).to(dtype)
+        return merged.reshape(shape).to(out_dtype)
 
     u_cm = u[:, :k]
     v_cm = v[:k, :]
@@ -51,7 +51,7 @@ def _iso_cts_merge(tensors, frac, dtype):
     r_final = U_star.shape[1]
     iso = sum_sigma / r_final
     merged = iso * (U_star @ V_star)
-    return merged.reshape(shape).to(dtype)
+    return merged.reshape(shape).to(out_dtype)
 
 
 def execute(node, inputs):
@@ -60,18 +60,26 @@ def execute(node, inputs):
     if len(inputs) < 2:
         raise ValueError('Iso-CTS requires at least two input models')
     dicts = []
-    dtype = None
+    dtype_str = None
     fmt = 'pt'
     for inp in inputs:
         if isinstance(inp, dict):
             dicts.append(inp.get('data'))
-            dtype = dtype or inp.get('dtype')
+            dtype_str = dtype_str or inp.get('dtype')
             fmt = inp.get('format', fmt)
         else:
             dicts.append(inp)
     keys = set()
     for d in dicts:
         keys.update(d.keys())
+    # resolve dtype for computations
+    dtype_map = {
+        'fp16': torch.float16,
+        'fp32': torch.float32,
+        'bf16': torch.bfloat16,
+    }
+    torch_dtype = dtype_map.get(dtype_str, torch.float32)
+
     result = {}
     for kname in keys:
         ref = None
@@ -93,8 +101,8 @@ def execute(node, inputs):
                     ref = t
             tensors.append(t)
         if tensors:
-            result[kname] = _iso_cts_merge(tensors, frac, dtype or torch.float32)
-    return {'data': result, 'format': fmt, 'dtype': dtype}
+            result[kname] = _iso_cts_merge(tensors, frac, torch_dtype)
+    return {'data': result, 'format': fmt, 'dtype': dtype_str}
 
 
 def get_spec():
