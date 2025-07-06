@@ -12,6 +12,7 @@ def execute(node, inputs):
     d1 = m1['data'] if isinstance(m1, dict) else m1
     d2 = m2['data'] if isinstance(m2, dict) else m2
     d3 = m3['data'] if isinstance(m3, dict) else m3
+    dtype = m1.get('dtype') if isinstance(m1, dict) else None
     result = {}
     keys = set(d1.keys()) | set(d2.keys()) | set(d3.keys())
     for k in keys:
@@ -20,7 +21,7 @@ def execute(node, inputs):
         v3 = d3.get(k, 0)
         result[k] = v1 + (v2 - v3) * alpha
     fmt = m1.get('format', 'pt') if isinstance(m1, dict) else 'pt'
-    return {'data': result, 'format': fmt}
+    return {'data': result, 'format': fmt, 'dtype': dtype}
 
 
 def get_spec():

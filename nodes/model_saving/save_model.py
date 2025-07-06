@@ -12,6 +12,13 @@ def execute(node, inputs):
     model_obj = inputs[0]
     data = model_obj['data'] if isinstance(model_obj, dict) else model_obj
     fmt = model_obj.get('format', 'pt') if isinstance(model_obj, dict) else 'pt'
+    dtype = params.get('dtype', 'fp16')
+    dtype_map = {
+        'fp16': torch.float16,
+        'fp32': torch.float32,
+        'bf16': torch.bfloat16,
+    }
+    torch_dtype = dtype_map.get(dtype, torch.float16)
     path = params.get('path', '.')
     path = os.path.expanduser(os.path.expandvars(path))
     name = params.get('name', 'model')
@@ -23,10 +30,15 @@ def execute(node, inputs):
         if ext not in ['.pt', '.pth']:
             name = os.path.splitext(name)[0] + '.pt'
     out = os.path.join(path, name)
-    if fmt == 'safetensors':
-        save_file(data, out)
+    if isinstance(data, dict):
+        conv_data = {k: (v.to(torch_dtype) if isinstance(v, torch.Tensor) else v)
+                     for k, v in data.items()}
     else:
-        torch.save(data, out)
+        conv_data = data
+    if fmt == 'safetensors':
+        save_file(conv_data, out)
+    else:
+        torch.save(conv_data, out)
     return out
 
 
@@ -42,6 +54,7 @@ def get_spec():
             {'kind': 'text', 'name': 'Name', 'bind': 'name'},
             {'kind': 'button', 'name': 'Choose Folder', 'action': '/choose_folder', 'assignTo': 'path'},
             {'kind': 'text', 'name': 'Folder', 'bind': 'path', 'options': {'disabled': True}},
+            {'kind': 'combo', 'name': 'DType', 'bind': 'dtype', 'options': {'values': ['fp32', 'fp16', 'bf16']}},
         ],
-        'properties': {'name': 'model', 'path': '.'},
+        'properties': {'name': 'model', 'path': '.', 'dtype': 'fp16'},
     }

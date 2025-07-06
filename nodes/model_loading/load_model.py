@@ -8,6 +8,13 @@ NODE_TYPE = 'model_loading/load_model'
 def execute(node, inputs):
     params = get_params(node)
     path = params.get('path')
+    dtype = params.get('dtype', 'fp16')
+    dtype_map = {
+        'fp16': torch.float16,
+        'fp32': torch.float32,
+        'bf16': torch.bfloat16,
+    }
+    torch_dtype = dtype_map.get(dtype, torch.float16)
     if not path:
         raise ValueError('No path provided for load_model')
     path = os.path.expanduser(os.path.expandvars(path))
@@ -18,7 +25,10 @@ def execute(node, inputs):
     else:
         data = torch.load(path, map_location='cpu')
         fmt = 'pt'
-    return {'data': data, 'format': fmt}
+    if isinstance(data, dict):
+        data = {k: (v.to(torch_dtype) if isinstance(v, torch.Tensor) else v)
+                for k, v in data.items()}
+    return {'data': data, 'format': fmt, 'dtype': dtype}
 
 
 def get_spec():
@@ -32,6 +42,7 @@ def get_spec():
         'widgets': [
             {'kind': 'button', 'name': 'Choose File', 'action': '/choose_file', 'assignTo': 'path'},
             {'kind': 'text', 'name': 'File', 'bind': 'path', 'options': {'disabled': True}},
+            {'kind': 'combo', 'name': 'DType', 'bind': 'dtype', 'options': {'values': ['fp32', 'fp16', 'bf16']}},
         ],
-        'properties': {'path': ''},
+        'properties': {'path': '', 'dtype': 'fp16'},
     }
