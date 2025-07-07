@@ -1,5 +1,5 @@
 from ..utils import get_params
-from utils.peft_utils import parse_weights, merge_state_dicts, dare_linear
+from utils.peft_utils import merge_state_dicts, dare_linear
 # Inspired by HuggingFace PEFT implementations
 
 NODE_TYPE = 'peft_merging/dare_linear'
@@ -11,8 +11,8 @@ def execute(node, inputs):
     if len(inputs) < 2:
         raise ValueError('DARE linear merge requires at least two inputs')
 
-    weights = parse_weights(params.get('weights', ''), len(inputs))
-    density = float(params.get('density', 0.5))
+    dropout = float(params.get('dropout', 0.0))
+    density = 1.0 - dropout
 
     models = []
     dtype = None
@@ -27,6 +27,7 @@ def execute(node, inputs):
         else:
             models.append(inp)
 
+    weights = [1.0] * len(models)
     merged = merge_state_dicts(models, weights, dare_linear, density=density)
     return {'data': merged, 'format': fmt, 'dtype': dtype}
 
@@ -50,9 +51,8 @@ def get_spec():
         ],
         'outputs': [{'name': 'model', 'type': 'model'}],
         'widgets': [
-            {'kind': 'text', 'name': 'Weights (comma separated)', 'bind': 'weights'},
-            {'kind': 'slider', 'name': 'Density', 'bind': 'density', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
+            {'kind': 'slider', 'name': 'Dropout', 'bind': 'dropout', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
         ],
-        'properties': {'weights': '', 'density': 0.5},
-        'tooltip': 'Combine PEFT tensors with DARE linear algorithm (https://arxiv.org/pdf/2311.03099v3).\nDensity controls random pruning before merging.'
+        'properties': {'dropout': 0.0},
+        'tooltip': 'Combine PEFT tensors with DARE linear algorithm (https://arxiv.org/pdf/2311.03099v3).\nDropout controls random pruning before merging.'
     }
