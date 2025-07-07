@@ -5,6 +5,7 @@ import json
 import importlib
 import os
 from memory_manager import MemoryManager
+import device_manager
 
 
 def load_nodes():
@@ -81,6 +82,29 @@ def choose_save_file():
                                         filetypes=[('JSON files', '*.json'), ('All files', '*.*')])
     root.destroy()
     return jsonify({'path': path})
+
+
+@app.route('/devices')
+def list_devices():
+    """Return available devices and current selection."""
+    return jsonify({
+        'devices': device_manager.available_devices(),
+        'current': device_manager.get_device(),
+    })
+
+
+@app.route('/device', methods=['GET', 'POST'])
+def set_device():
+    """Get or set the global device."""
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        dev = data.get('device')
+        if dev:
+            try:
+                device_manager.set_device(dev)
+            except ValueError:
+                return jsonify({'error': 'unknown device'}), 400
+    return jsonify({'device': device_manager.get_device()})
 
 
 @app.route('/save_graph', methods=['POST'])
