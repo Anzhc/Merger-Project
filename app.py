@@ -201,20 +201,26 @@ def run_graph():
     # copy counts for topological sort so that original
     # dependencies remain intact for execution
     remaining = {nid: len(deps) for nid, deps in incoming.items()}
+
+    def push_ready_node(nid):
+        """Push node with priority by how many children it unlocks."""
+        unlocks = sum(1 for tgt in outgoing.get(nid, []) if remaining[tgt] == 1)
+        heapq.heappush(queue, (-unlocks, -distances.get(nid, 0), nid))
+
     queue = []
     for nid, cnt in remaining.items():
         if cnt == 0:
-            heapq.heappush(queue, (-distances.get(nid, 0), nid))
+            push_ready_node(nid)
     memory = MemoryManager(reachable, outgoing)
 
     order = []
     while queue:
-        _, nid = heapq.heappop(queue)
+        _, _, nid = heapq.heappop(queue)
         order.append(nid)
         for tgt in outgoing[nid]:
             remaining[tgt] -= 1
             if remaining[tgt] == 0:
-                heapq.heappush(queue, (-distances.get(tgt, 0), tgt))
+                push_ready_node(tgt)
 
     try:
         for nid in order:
@@ -278,20 +284,25 @@ def run_graph_stream():
     distances = compute_node_distance(sinks, incoming)
 
     remaining = {nid: len(deps) for nid, deps in incoming.items()}
+
+    def push_ready_node(nid):
+        unlocks = sum(1 for tgt in outgoing.get(nid, []) if remaining[tgt] == 1)
+        heapq.heappush(queue, (-unlocks, -distances.get(nid, 0), nid))
+
     queue = []
     for nid, cnt in remaining.items():
         if cnt == 0:
-            heapq.heappush(queue, (-distances.get(nid, 0), nid))
+            push_ready_node(nid)
     memory = MemoryManager(reachable, outgoing)
 
     order = []
     while queue:
-        _, nid = heapq.heappop(queue)
+        _, _, nid = heapq.heappop(queue)
         order.append(nid)
         for tgt in outgoing[nid]:
             remaining[tgt] -= 1
             if remaining[tgt] == 0:
-                heapq.heappush(queue, (-distances.get(tgt, 0), tgt))
+                push_ready_node(tgt)
 
     def generate():
         try:
