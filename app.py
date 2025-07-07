@@ -283,7 +283,10 @@ def run_graph_stream():
         finally:
             memory.flush()
 
-    return Response(generate(), mimetype='application/json')
+    gen = generate()
+    resp = Response(gen, mimetype='application/json')
+    resp.call_on_close(gen.close)
+    return resp
 
 if __name__ == '__main__':
     app.run(debug=True)
