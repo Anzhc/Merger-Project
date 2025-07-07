@@ -4,7 +4,7 @@ from tkinter import filedialog
 import json
 import importlib
 import os
-from memory_manager import MemoryManager, global_flush
+from memory_manager import MemoryManager
 import device_manager
 
 
@@ -206,9 +206,9 @@ def run_graph():
             input_values = [memory.get(i) for i in incoming[nid]]
             result = op(node, input_values)
             memory.store(nid, result)
+            result = None
     finally:
         memory.flush()
-        global_flush()
 
     return jsonify({'status': 'ok'})
 
@@ -279,11 +279,11 @@ def run_graph_stream():
                     input_values = [memory.get(i) for i in incoming[nid]]
                     result = op(node, input_values)
                     memory.store(nid, result)
+                    result = None
                 yield json.dumps({'node': nid}) + '\n'
             yield json.dumps({'status': 'done'}) + '\n'
         finally:
             memory.flush()
-            global_flush()
 
     return Response(generate(), mimetype='application/json')
 

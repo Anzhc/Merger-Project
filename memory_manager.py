@@ -31,16 +31,3 @@ class MemoryManager:
                 torch.cuda.ipc_collect()
         except Exception:
             pass
-
-
-def global_flush():
-    """Release cached memory similar to what happens at graph start."""
-    try:
-        import gc
-        gc.collect()
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
-    except Exception:
-        pass
