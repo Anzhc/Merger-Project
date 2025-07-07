@@ -265,6 +265,31 @@ function pushHistory(){
 graph.onBeforeChange = pushHistory;
 pushHistory();
 
+function markOrphans(){
+  if(!graph._nodes) return;
+  var incoming = {}, outgoing = {};
+  graph._nodes.forEach(function(n){ incoming[n.id]=[]; outgoing[n.id]=[]; });
+  for(var id in graph.links){
+    var l = graph.links[id];
+    if(!l) continue;
+    if(outgoing[l.origin_id]) outgoing[l.origin_id].push(l.target_id);
+    if(incoming[l.target_id]) incoming[l.target_id].push(l.origin_id);
+  }
+  var sinks = Object.keys(outgoing).filter(function(id){return outgoing[id].length===0;});
+  var stack = sinks.slice();
+  var reachable = {};
+  while(stack.length){
+    var n = stack.pop();
+    if(reachable[n]) continue;
+    reachable[n] = true;
+    (incoming[n]||[]).forEach(function(p){ stack.push(p); });
+  }
+  graph._nodes.forEach(function(n){ n.__orphan = !reachable[n.id]; });
+  canvas.setDirty(true,false);
+}
+graph.onAfterChange = markOrphans;
+markOrphans();
+
 function undoHistory(){
   if(graphHistory.length < 2) return;
   redoHistory.push(graphHistory.pop());
@@ -371,6 +396,19 @@ document.getElementById('load').onclick = function(){
         graphHistory = [graph.serialize()];
         redoHistory.length = 0;
       });
+  });
+};
+
+canvas.onDrawForeground = function(ctx){
+  if(!graph._nodes) return;
+  graph._nodes.forEach(function(n){
+    var color = n.__orphan ? '#f00' : '#888';
+    var x = n.pos[0] + n.size[0] - 6;
+    var y = n.pos[1] + 6;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
   });
 };
 

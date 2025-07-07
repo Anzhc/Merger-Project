@@ -1,7 +1,7 @@
 class MemoryManager:
     """Simple reference-count based memory manager for node outputs."""
     def __init__(self, nodes, outgoing):
-        # number of times each node output is referenced
+        """Initialize with reference counts based on ``outgoing`` links."""
         self.ref_counts = {nid: len(outgoing.get(nid, [])) for nid in nodes}
         self.values = {}
 
@@ -18,3 +18,15 @@ class MemoryManager:
             if self.ref_counts[nid] <= 0 and nid in self.values:
                 del self.values[nid]
         return val
+
+    def flush(self):
+        """Clear all stored values and release GPU memory if possible."""
+        self.values.clear()
+        try:
+            import gc
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
