@@ -16,13 +16,14 @@ def execute(node, inputs):
         'bf16': torch.bfloat16,
     }
     torch_dtype = dtype_map.get(dtype, torch.float16)
-    device = torch.device(get_device(node))
+    device_str = get_device(node)
+    device = torch.device(device_str)
     if not path:
         raise ValueError('No path provided for load_model')
     path = os.path.expanduser(os.path.expandvars(path))
     ext = os.path.splitext(path)[1].lower()
     if ext == '.safetensors':
-        data = load_file(path, device=device)
+        data = load_file(path)
         fmt = 'safetensors'
     else:
         data = torch.load(path, map_location=device)
