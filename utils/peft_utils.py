@@ -9,6 +9,7 @@ import warnings
 from typing import Literal, List
 
 import torch
+import device_manager
 
 
 def reshape_weight_task_tensors(task_tensors: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
@@ -127,7 +128,8 @@ def merge_state_dicts(models: List[dict], weights: List[float], merge_func, **kw
     for d in models:
         keys.update(d.keys())
     result = {}
-    weight_tensor = torch.tensor(weights, dtype=torch.float32)
+    device = torch.device(device_manager.get_device())
+    weight_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
     for k in keys:
         ref = None
         for d in models:
@@ -141,10 +143,10 @@ def merge_state_dicts(models: List[dict], weights: List[float], merge_func, **kw
         for d in models:
             t = d.get(k)
             if t is None:
-                tensors.append(torch.zeros_like(ref))
+                tensors.append(torch.zeros_like(ref, device=device))
             else:
                 if not isinstance(t, torch.Tensor):
-                    t = torch.tensor(t)
+                    t = torch.tensor(t, device=device)
                 tensors.append(t)
         result[k] = merge_func(tensors, weight_tensor, **kwargs)
     return result

@@ -1,7 +1,7 @@
 import os
 import torch
 from safetensors.torch import load_file
-from ..utils import get_params
+from ..utils import get_params, get_device
 
 NODE_TYPE = 'model_loading/load_model'
 NODE_CATEGORY = 'Model Loading'
@@ -16,19 +16,22 @@ def execute(node, inputs):
         'bf16': torch.bfloat16,
     }
     torch_dtype = dtype_map.get(dtype, torch.float16)
+    device = torch.device(get_device(node))
     if not path:
         raise ValueError('No path provided for load_model')
     path = os.path.expanduser(os.path.expandvars(path))
     ext = os.path.splitext(path)[1].lower()
     if ext == '.safetensors':
-        data = load_file(path)
+        data = load_file(path, device=device)
         fmt = 'safetensors'
     else:
-        data = torch.load(path, map_location='cpu')
+        data = torch.load(path, map_location=device)
         fmt = 'pt'
     if isinstance(data, dict):
-        data = {k: (v.to(torch_dtype) if isinstance(v, torch.Tensor) else v)
-                for k, v in data.items()}
+        data = {
+            k: (v.to(device=device, dtype=torch_dtype) if isinstance(v, torch.Tensor) else v)
+            for k, v in data.items()
+        }
     return {'data': data, 'format': fmt, 'dtype': dtype}
 
 

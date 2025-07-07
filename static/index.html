@@ -19,6 +19,7 @@ body, html {margin:0; padding:0; height:100%; overflow:hidden; background:#222; 
 </head>
 <body>
 <div id="topbar">
+  <select id="device-select"></select>
   <button id="run">Run</button>
   <button id="save">Save Graph</button>
   <button id="load">Load Graph</button>
@@ -61,6 +62,26 @@ var canvas = new LGraphCanvas(canvasElement, graph);
 var tooltipElem = document.getElementById('node-tooltip');
 var tooltipTimer = null;
 var hoveredNode = null;
+var deviceSelect = document.getElementById('device-select');
+
+function refreshDevices(){
+  fetch('/devices').then(r=>r.json()).then(function(data){
+    deviceSelect.innerHTML = '';
+    data.devices.forEach(function(d){
+      var opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = d;
+      if(d === data.current) opt.selected = true;
+      deviceSelect.appendChild(opt);
+    });
+  });
+}
+
+deviceSelect.addEventListener('change', function(){
+  fetch('/device', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({device: deviceSelect.value})});
+});
+
+refreshDevices();
 
 function fitCanvas(){
   var rect = container.getBoundingClientRect();
