@@ -25,8 +25,7 @@ class MemoryManager:
         try:
             import gc
             gc.collect()
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            from device_manager import cleanup_memory
+            cleanup_memory()
         except Exception:
             pass

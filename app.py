@@ -207,6 +207,7 @@ def run_graph():
         memory.store(nid, result)
 
     memory.flush()
+    device_manager.cleanup_memory()
     return jsonify({'status': 'ok'})
 
 
@@ -277,6 +278,7 @@ def run_graph_stream():
                 memory.store(nid, result)
             yield json.dumps({'node': nid}) + '\n'
         memory.flush()
+        device_manager.cleanup_memory()
         yield json.dumps({'status': 'done'}) + '\n'
 
     return Response(generate(), mimetype='application/json')

@@ -13,5 +13,6 @@ def get_device(node=None):
         params = get_params(node)
         dev = params.get('device')
         if dev:
+            device_manager.mark_device_used(dev)
             return dev
     return device_manager.get_device()
