@@ -44,6 +44,24 @@ OPERATIONS, NODE_SPECS = load_nodes()
 app = Flask(__name__, static_folder='static', static_url_path='')
 
 
+def compute_execution_order(sinks, incoming):
+    """Return nodes ordered from outputs backward using DFS."""
+    visited = set()
+    order = []
+
+    def visit(nid):
+        if nid in visited:
+            return
+        visited.add(nid)
+        for parent in incoming.get(nid, []):
+            visit(parent)
+        order.append(nid)
+
+    for s in sinks:
+        visit(s)
+    return order
+
+
 @app.route('/node_specs')
 def list_node_specs():
     """Return UI specifications for all available nodes."""
@@ -181,21 +199,8 @@ def run_graph():
     incoming = {nid: incoming[nid] for nid in reachable}
     outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
 
-    # copy counts for topological sort so that original
-    # dependencies remain intact for execution
-    remaining = {nid: len(deps) for nid, deps in incoming.items()}
-    queue = [nid for nid, cnt in remaining.items() if cnt == 0]
+    order = compute_execution_order(sinks, incoming)
     memory = MemoryManager(reachable, outgoing)
-
-    processed = set()
-    order = []
-    while queue:
-        nid = queue.pop(0)
-        order.append(nid)
-        for tgt in outgoing[nid]:
-            remaining[tgt] -= 1
-            if remaining[tgt] == 0:
-                queue.append(tgt)
 
     try:
         for nid in order:
@@ -256,18 +261,8 @@ def run_graph_stream():
     incoming = {nid: incoming[nid] for nid in reachable}
     outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
 
-    remaining = {nid: len(deps) for nid, deps in incoming.items()}
-    queue = [nid for nid, cnt in remaining.items() if cnt == 0]
+    order = compute_execution_order(sinks, incoming)
     memory = MemoryManager(reachable, outgoing)
-
-    order = []
-    while queue:
-        nid = queue.pop(0)
-        order.append(nid)
-        for tgt in outgoing[nid]:
-            remaining[tgt] -= 1
-            if remaining[tgt] == 0:
-                queue.append(tgt)
 
     def generate():
         try:
