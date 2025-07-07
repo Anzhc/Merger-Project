@@ -4,7 +4,6 @@ from tkinter import filedialog
 import json
 import importlib
 import os
-import heapq
 from memory_manager import MemoryManager
 import device_manager
 
@@ -45,18 +44,22 @@ OPERATIONS, NODE_SPECS = load_nodes()
 app = Flask(__name__, static_folder='static', static_url_path='')
 
 
-def compute_node_distance(sinks, incoming):
-    """Return dictionary mapping node id to distance from closest sink."""
-    dist = {nid: 0 for nid in sinks}
-    queue = list(sinks)
-    while queue:
-        nid = queue.pop(0)
+def compute_execution_order(sinks, incoming):
+    """Return nodes ordered from outputs backward using DFS."""
+    visited = set()
+    order = []
+
+    def visit(nid):
+        if nid in visited:
+            return
+        visited.add(nid)
         for parent in incoming.get(nid, []):
-            new_d = dist[nid] + 1
-            if new_d > dist.get(parent, -1):
-                dist[parent] = new_d
-                queue.append(parent)
-    return dist
+            visit(parent)
+        order.append(nid)
+
+    for s in sinks:
+        visit(s)
+    return order
 
 
 @app.route('/node_specs')
@@ -196,31 +199,8 @@ def run_graph():
     incoming = {nid: incoming[nid] for nid in reachable}
     outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
 
-    distances = compute_node_distance(sinks, incoming)
-
-    # copy counts for topological sort so that original
-    # dependencies remain intact for execution
-    remaining = {nid: len(deps) for nid, deps in incoming.items()}
-
-    def push_ready_node(nid):
-        """Push node with priority by how many children it unlocks."""
-        unlocks = sum(1 for tgt in outgoing.get(nid, []) if remaining[tgt] == 1)
-        heapq.heappush(queue, (-unlocks, -distances.get(nid, 0), nid))
-
-    queue = []
-    for nid, cnt in remaining.items():
-        if cnt == 0:
-            push_ready_node(nid)
+    order = compute_execution_order(sinks, incoming)
     memory = MemoryManager(reachable, outgoing)
-
-    order = []
-    while queue:
-        _, _, nid = heapq.heappop(queue)
-        order.append(nid)
-        for tgt in outgoing[nid]:
-            remaining[tgt] -= 1
-            if remaining[tgt] == 0:
-                push_ready_node(tgt)
 
     try:
         for nid in order:
@@ -281,28 +261,8 @@ def run_graph_stream():
     incoming = {nid: incoming[nid] for nid in reachable}
     outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
 
-    distances = compute_node_distance(sinks, incoming)
-
-    remaining = {nid: len(deps) for nid, deps in incoming.items()}
-
-    def push_ready_node(nid):
-        unlocks = sum(1 for tgt in outgoing.get(nid, []) if remaining[tgt] == 1)
-        heapq.heappush(queue, (-unlocks, -distances.get(nid, 0), nid))
-
-    queue = []
-    for nid, cnt in remaining.items():
-        if cnt == 0:
-            push_ready_node(nid)
+    order = compute_execution_order(sinks, incoming)
     memory = MemoryManager(reachable, outgoing)
-
-    order = []
-    while queue:
-        _, _, nid = heapq.heappop(queue)
-        order.append(nid)
-        for tgt in outgoing[nid]:
-            remaining[tgt] -= 1
-            if remaining[tgt] == 0:
-                push_ready_node(tgt)
 
     def generate():
         try:
