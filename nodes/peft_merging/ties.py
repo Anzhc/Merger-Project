@@ -1,5 +1,5 @@
 from ..utils import get_params
-from utils.peft_utils import parse_weights, merge_state_dicts, ties
+from utils.peft_utils import merge_state_dicts, ties
 # Inspired by HuggingFace PEFT implementations
 
 NODE_TYPE = 'peft_merging/ties'
@@ -11,8 +11,8 @@ def execute(node, inputs):
     if len(inputs) < 2:
         raise ValueError('TIES merge requires at least two inputs')
 
-    weights = parse_weights(params.get('weights', ''), len(inputs))
-    density = float(params.get('density', 0.5))
+    dropout = float(params.get('dropout', 0.0))
+    density = 1.0 - dropout
     majority = params.get('majority_sign_method', 'total')
 
     models = []
@@ -28,6 +28,7 @@ def execute(node, inputs):
         else:
             models.append(inp)
 
+    weights = [1.0] * len(models)
     merged = merge_state_dicts(models, weights, ties, density=density, majority_sign_method=majority)
     return {'data': merged, 'format': fmt, 'dtype': dtype}
 
@@ -51,8 +52,7 @@ def get_spec():
         ],
         'outputs': [{'name': 'model', 'type': 'model'}],
         'widgets': [
-            {'kind': 'text', 'name': 'Weights (comma separated)', 'bind': 'weights'},
-            {'kind': 'slider', 'name': 'Density', 'bind': 'density', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
+            {'kind': 'slider', 'name': 'Dropout', 'bind': 'dropout', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
             {
                 'kind': 'combo',
                 'name': 'Majority Sign',
@@ -60,7 +60,7 @@ def get_spec():
                 'options': {'values': ['total', 'frequency']}
             },
         ],
-        'properties': {'weights': '', 'density': 0.5, 'majority_sign_method': 'total'},
+        'properties': {'dropout': 0.0, 'majority_sign_method': 'total'},
         'tooltip': 'Merge PEFT tensors using the TIES algorithm (see https://arxiv.org/pdf/2306.01708).'
-                   '\nDensity controls pruning before merging; majority sign selects how sign voting is performed.'
+                   '\nDropout controls pruning before merging; majority sign selects how sign voting is performed.'
     }
