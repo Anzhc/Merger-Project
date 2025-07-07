@@ -197,16 +197,18 @@ def run_graph():
             if remaining[tgt] == 0:
                 queue.append(tgt)
 
-    for nid in order:
-        node = nodes[nid]
-        op = OPERATIONS.get(node['type'])
-        if not op:
-            continue
-        input_values = [memory.get(i) for i in incoming[nid]]
-        result = op(node, input_values)
-        memory.store(nid, result)
+    try:
+        for nid in order:
+            node = nodes[nid]
+            op = OPERATIONS.get(node['type'])
+            if not op:
+                continue
+            input_values = [memory.get(i) for i in incoming[nid]]
+            result = op(node, input_values)
+            memory.store(nid, result)
+    finally:
+        memory.flush()
 
-    memory.flush()
     return jsonify({'status': 'ok'})
 
 
@@ -268,15 +270,17 @@ def run_graph_stream():
                 queue.append(tgt)
 
     def generate():
-        for nid in order:
-            node = nodes[nid]
-            op = OPERATIONS.get(node['type'])
-            if op:
-                input_values = [memory.get(i) for i in incoming[nid]]
-                result = op(node, input_values)
-                memory.store(nid, result)
-            yield json.dumps({'node': nid}) + '\n'
-        memory.flush()
+        try:
+            for nid in order:
+                node = nodes[nid]
+                op = OPERATIONS.get(node['type'])
+                if op:
+                    input_values = [memory.get(i) for i in incoming[nid]]
+                    result = op(node, input_values)
+                    memory.store(nid, result)
+                yield json.dumps({'node': nid}) + '\n'
+        finally:
+            memory.flush()
         yield json.dumps({'status': 'done'}) + '\n'
 
     return Response(generate(), mimetype='application/json')
