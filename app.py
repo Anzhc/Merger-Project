@@ -144,11 +144,24 @@ def run_graph():
         outgoing[src].append(dst)
         incoming[dst].append(src)
 
+    sinks = [nid for nid, outs in outgoing.items() if nodes[nid]['type'].startswith('model_saving/')]
+    reachable = set()
+    stack = sinks[:]
+    while stack:
+        nid = stack.pop()
+        if nid in reachable:
+            continue
+        reachable.add(nid)
+        stack.extend(incoming[nid])
+
+    incoming = {nid: incoming[nid] for nid in reachable}
+    outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
+
     # copy counts for topological sort so that original
     # dependencies remain intact for execution
     remaining = {nid: len(deps) for nid, deps in incoming.items()}
     queue = [nid for nid, cnt in remaining.items() if cnt == 0]
-    memory = MemoryManager(nodes.keys(), outgoing)
+    memory = MemoryManager(reachable, outgoing)
 
     processed = set()
     order = []
@@ -169,6 +182,7 @@ def run_graph():
         result = op(node, input_values)
         memory.store(nid, result)
 
+    memory.flush()
     return jsonify({'status': 'ok'})
 
 
@@ -203,9 +217,22 @@ def run_graph_stream():
         outgoing[src].append(dst)
         incoming[dst].append(src)
 
+    sinks = [nid for nid, outs in outgoing.items() if nodes[nid]['type'].startswith('model_saving/')]
+    reachable = set()
+    stack = sinks[:]
+    while stack:
+        nid = stack.pop()
+        if nid in reachable:
+            continue
+        reachable.add(nid)
+        stack.extend(incoming[nid])
+
+    incoming = {nid: incoming[nid] for nid in reachable}
+    outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
+
     remaining = {nid: len(deps) for nid, deps in incoming.items()}
     queue = [nid for nid, cnt in remaining.items() if cnt == 0]
-    memory = MemoryManager(nodes.keys(), outgoing)
+    memory = MemoryManager(reachable, outgoing)
 
     order = []
     while queue:
@@ -225,6 +252,7 @@ def run_graph_stream():
                 result = op(node, input_values)
                 memory.store(nid, result)
             yield json.dumps({'node': nid}) + '\n'
+        memory.flush()
         yield json.dumps({'status': 'done'}) + '\n'
 
     return Response(generate(), mimetype='application/json')

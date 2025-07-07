@@ -265,6 +265,36 @@ function pushHistory(){
 graph.onBeforeChange = pushHistory;
 pushHistory();
 
+function markOrphans(){
+  if(!graph._nodes) return;
+  var incoming = {}, outgoing = {};
+  graph._nodes.forEach(function(n){ incoming[n.id]=[]; outgoing[n.id]=[]; });
+  for(var id in graph.links){
+    var l = graph.links[id];
+    if(!l) continue;
+    if(outgoing[l.origin_id]) outgoing[l.origin_id].push(l.target_id);
+    if(incoming[l.target_id]) incoming[l.target_id].push(l.origin_id);
+  }
+  var sinks = graph._nodes.filter(function(n){
+    return n.type && n.type.indexOf('model_saving/') === 0;
+  }).map(function(n){ return n.id; });
+  var stack = sinks.slice();
+  var reachable = {};
+  while(stack.length){
+    var n = stack.pop();
+    if(reachable[n]) continue;
+    reachable[n] = true;
+    (incoming[n]||[]).forEach(function(p){ stack.push(p); });
+  }
+  graph._nodes.forEach(function(n){
+    n.__orphan = !reachable[n.id];
+    n.boxcolor = n.__orphan ? '#f00' : '#888';
+  });
+  canvas.setDirty(true,false);
+}
+graph.onAfterChange = markOrphans;
+markOrphans();
+
 function undoHistory(){
   if(graphHistory.length < 2) return;
   redoHistory.push(graphHistory.pop());
@@ -373,6 +403,8 @@ document.getElementById('load').onclick = function(){
       });
   });
 };
+
+
 
 graph.start();
 </script>
