@@ -32,9 +32,18 @@ class MemoryManager:
             import gc
             gc.collect()
             import torch
+            import device_manager
             if torch.cuda.is_available():
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
+                for dev in device_manager.available_devices():
+                    if dev == 'cpu':
+                        continue
+                    try:
+                        with torch.cuda.device(dev):
+                            torch.cuda.synchronize()
+                            torch.cuda.empty_cache()
+                            torch.cuda.ipc_collect()
+                            torch.cuda.device_reset()
+                    except Exception:
+                        pass
         except Exception:
             pass
