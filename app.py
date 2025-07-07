@@ -279,9 +279,9 @@ def run_graph_stream():
                     result = op(node, input_values)
                     memory.store(nid, result)
                 yield json.dumps({'node': nid}) + '\n'
+            yield json.dumps({'status': 'done'}) + '\n'
         finally:
             memory.flush()
-        yield json.dumps({'status': 'done'}) + '\n'
 
     return Response(generate(), mimetype='application/json')
 
