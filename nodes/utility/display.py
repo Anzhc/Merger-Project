@@ -1,6 +1,6 @@
 from ..utils import get_params
 
-NODE_TYPE = 'utility/display'
+NODE_TYPE = 'model_saving/display'
 NODE_CATEGORY = 'Utility'
 
 
@@ -17,11 +17,17 @@ def get_spec():
     return {
         'type': NODE_TYPE,
         'title': 'Display',
-        'category': 'utility',
-        'inputs': [{'name': 'value', 'type': 'value'}],
+        'category': 'model_saving',
+        'node_category': NODE_CATEGORY,
+        'inputs': [{'name': 'value', 'type': ''}],
         'outputs': [],
         'widgets': [
-            {'kind': 'text', 'name': 'Value', 'bind': 'value', 'options': {'disabled': True}},
+            {
+                'kind': 'textarea',
+                'name': 'Value',
+                'bind': 'value',
+                'options': {'disabled': True},
+            },
         ],
         'properties': {'value': ''},
         'tooltip': 'Show input value',
