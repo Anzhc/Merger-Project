@@ -297,7 +297,7 @@ function markOrphans(){
     if(incoming[l.target_id]) incoming[l.target_id].push(l.origin_id);
   }
   var sinks = graph._nodes.filter(function(n){
-    return n.type && n.type.indexOf('model_saving/') === 0;
+    return !n.outputs || n.outputs.length === 0;
   }).map(function(n){ return n.id; });
   var stack = sinks.slice();
   var reachable = {};
