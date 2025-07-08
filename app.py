@@ -163,19 +163,22 @@ def run_graph():
         for link in links_raw.values():
             # serialized links are [id, origin_id, origin_slot, target_id, target_slot, type]
             if isinstance(link, list) and len(link) >= 5:
-                edges.append({'from': link[1], 'to': link[3]})
+                edges.append({'from': link[1], 'to': link[3], 'out': link[2], 'in': link[4]})
     elif isinstance(links_raw, list):
         for link in links_raw:
             if isinstance(link, dict):
                 src = link.get('from') or link.get('origin_id')
                 dst = link.get('to') or link.get('target_id')
+                out_slot = link.get('from_slot') or link.get('origin_slot') or 0
+                in_slot = link.get('to_slot') or link.get('target_slot') or 0
                 if src is not None and dst is not None:
-                    edges.append({'from': src, 'to': dst})
+                    edges.append({'from': src, 'to': dst, 'out': out_slot, 'in': in_slot})
             elif isinstance(link, list) and len(link) >= 5:
-                edges.append({'from': link[1], 'to': link[3]})
+                edges.append({'from': link[1], 'to': link[3], 'out': link[2], 'in': link[4]})
 
     # Build dependency lists
-    incoming = {nid: [] for nid in nodes}
+    incoming_nodes = {nid: [] for nid in nodes}
+    incoming_edges = {nid: [] for nid in nodes}
     outgoing = {nid: [] for nid in nodes}
     for e in edges:
         src = e['from']
@@ -184,7 +187,8 @@ def run_graph():
             # ignore links pointing to missing nodes
             continue
         outgoing[src].append(dst)
-        incoming[dst].append(src)
+        incoming_nodes[dst].append(src)
+        incoming_edges[dst].append((e.get('in', 0), src, e.get('out', 0)))
 
     sinks = [nid for nid, outs in outgoing.items() if nodes[nid]['type'].startswith('model_saving/')]
     reachable = set()
@@ -194,12 +198,13 @@ def run_graph():
         if nid in reachable:
             continue
         reachable.add(nid)
-        stack.extend(incoming[nid])
+        stack.extend(incoming_nodes[nid])
 
-    incoming = {nid: incoming[nid] for nid in reachable}
+    incoming_nodes = {nid: incoming_nodes[nid] for nid in reachable}
+    incoming_edges = {nid: sorted(incoming_edges[nid], key=lambda x: x[0]) for nid in reachable}
     outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
 
-    order = compute_execution_order(sinks, incoming)
+    order = compute_execution_order(sinks, incoming_nodes)
     memory = MemoryManager(reachable, outgoing)
 
     try:
@@ -208,7 +213,12 @@ def run_graph():
             op = OPERATIONS.get(node['type'])
             if not op:
                 continue
-            input_values = [memory.get(i) for i in incoming[nid]]
+            input_values = []
+            for slot, src_id, out_slot in incoming_edges.get(nid, []):
+                val = memory.get(src_id)
+                if isinstance(val, (tuple, list)) and out_slot < len(val):
+                    val = val[out_slot]
+                input_values.append(val)
             result = op(node, input_values)
             memory.store(nid, result)
     finally:
@@ -227,18 +237,21 @@ def run_graph_stream():
     if isinstance(links_raw, dict):
         for link in links_raw.values():
             if isinstance(link, list) and len(link) >= 5:
-                edges.append({'from': link[1], 'to': link[3]})
+                edges.append({'from': link[1], 'to': link[3], 'out': link[2], 'in': link[4]})
     elif isinstance(links_raw, list):
         for link in links_raw:
             if isinstance(link, dict):
                 src = link.get('from') or link.get('origin_id')
                 dst = link.get('to') or link.get('target_id')
+                out_slot = link.get('from_slot') or link.get('origin_slot') or 0
+                in_slot = link.get('to_slot') or link.get('target_slot') or 0
                 if src is not None and dst is not None:
-                    edges.append({'from': src, 'to': dst})
+                    edges.append({'from': src, 'to': dst, 'out': out_slot, 'in': in_slot})
             elif isinstance(link, list) and len(link) >= 5:
-                edges.append({'from': link[1], 'to': link[3]})
+                edges.append({'from': link[1], 'to': link[3], 'out': link[2], 'in': link[4]})
 
-    incoming = {nid: [] for nid in nodes}
+    incoming_nodes = {nid: [] for nid in nodes}
+    incoming_edges = {nid: [] for nid in nodes}
     outgoing = {nid: [] for nid in nodes}
     for e in edges:
         src = e['from']
@@ -246,7 +259,8 @@ def run_graph_stream():
         if src not in nodes or dst not in nodes:
             continue
         outgoing[src].append(dst)
-        incoming[dst].append(src)
+        incoming_nodes[dst].append(src)
+        incoming_edges[dst].append((e.get('in', 0), src, e.get('out', 0)))
 
     sinks = [nid for nid, outs in outgoing.items() if nodes[nid]['type'].startswith('model_saving/')]
     reachable = set()
@@ -256,12 +270,13 @@ def run_graph_stream():
         if nid in reachable:
             continue
         reachable.add(nid)
-        stack.extend(incoming[nid])
+        stack.extend(incoming_nodes[nid])
 
-    incoming = {nid: incoming[nid] for nid in reachable}
+    incoming_nodes = {nid: incoming_nodes[nid] for nid in reachable}
+    incoming_edges = {nid: sorted(incoming_edges[nid], key=lambda x: x[0]) for nid in reachable}
     outgoing = {nid: [t for t in outgoing[nid] if t in reachable] for nid in reachable}
 
-    order = compute_execution_order(sinks, incoming)
+    order = compute_execution_order(sinks, incoming_nodes)
     memory = MemoryManager(reachable, outgoing)
 
     def generate():
@@ -270,7 +285,12 @@ def run_graph_stream():
                 node = nodes[nid]
                 op = OPERATIONS.get(node['type'])
                 if op:
-                    input_values = [memory.get(i) for i in incoming[nid]]
+                    input_values = []
+                    for slot, src_id, out_slot in incoming_edges.get(nid, []):
+                        val = memory.get(src_id)
+                        if isinstance(val, (tuple, list)) and out_slot < len(val):
+                            val = val[out_slot]
+                        input_values.append(val)
                     result = op(node, input_values)
                     memory.store(nid, result)
                 yield json.dumps({'node': nid}) + '\n'
