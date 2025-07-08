@@ -198,7 +198,7 @@ def run_graph():
         if nid in reachable:
             continue
         reachable.add(nid)
-        stack.extend(incoming[nid])
+        stack.extend(incoming_nodes[nid])
 
     incoming_nodes = {nid: incoming_nodes[nid] for nid in reachable}
     incoming_edges = {nid: sorted(incoming_edges[nid], key=lambda x: x[0]) for nid in reachable}
@@ -270,7 +270,7 @@ def run_graph_stream():
         if nid in reachable:
             continue
         reachable.add(nid)
-        stack.extend(incoming[nid])
+        stack.extend(incoming_nodes[nid])
 
     incoming_nodes = {nid: incoming_nodes[nid] for nid in reachable}
     incoming_edges = {nid: sorted(incoming_edges[nid], key=lambda x: x[0]) for nid in reachable}
