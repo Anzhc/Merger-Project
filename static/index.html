@@ -230,9 +230,41 @@ function registerSpec(spec){
           self.properties[w.bind] = v;
         }, Object.assign({bindProp:w.bind}, w.options||{}));
       } else if(w.kind === 'textarea'){
-        self.addWidget('text', w.name, self.properties[w.bind] || '', function(v){
-          self.properties[w.bind] = v;
-        }, Object.assign({bindProp:w.bind, multiline:true}, w.options||{}));
+        if(w.options && w.options.disabled){
+          var widget = {
+            type: 'textarea_display',
+            name: w.name,
+            value: self.properties[w.bind] || '',
+            options: Object.assign({bindProp:w.bind}, w.options||{}),
+            node: self,
+            draw: function(ctx,node,widget_width,y,H){
+              var margin = 15;
+              var val = node.properties[this.options.bindProp] || '';
+              var lines = String(val).split(/\n/);
+              var lineH = LiteGraph.NODE_WIDGET_HEIGHT;
+              var height = lines.length * lineH;
+              ctx.fillStyle = '#222';
+              ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
+              ctx.fillRect(margin,y,widget_width - margin*2,height);
+              ctx.strokeRect(margin,y,widget_width - margin*2,height);
+              ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
+              ctx.textAlign = 'left';
+              for(var i=0;i<lines.length;i++){
+                ctx.fillText(lines[i], margin+4, y + lineH*(i+0.7));
+              }
+            },
+            computeSize: function(width){
+              var val = this.node.properties[this.options.bindProp] || '';
+              var lines = String(val).split(/\n/).length || 1;
+              return [width, lines * LiteGraph.NODE_WIDGET_HEIGHT];
+            }
+          };
+          self.addCustomWidget(widget);
+        } else {
+          self.addWidget('text', w.name, self.properties[w.bind] || '', function(v){
+            self.properties[w.bind] = v;
+          }, Object.assign({bindProp:w.bind, multiline:true}, w.options||{}));
+        }
       }
     });
   }
@@ -259,6 +291,7 @@ function syncNodeWidgets(node){
       w.value = node.properties[w.options.bindProp];
     }
   });
+  node.size = node.computeSize();
 }
 
 document.getElementById('graph').addEventListener('dragover', function(ev){ ev.preventDefault(); });
