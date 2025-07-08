@@ -12,7 +12,7 @@ def execute(node, inputs):
         raise ValueError('Save node requires an input model')
     model_obj = inputs[0]
     data = model_obj['data'] if isinstance(model_obj, dict) else model_obj
-    fmt = model_obj.get('format', 'safetensors') if isinstance(model_obj, dict) else 'safetensors'
+    fmt = params.get('format', 'safetensors')
     dtype = params.get('dtype', 'fp16')
     dtype_map = {
         'fp16': torch.float16,
@@ -55,8 +55,9 @@ def get_spec():
             {'kind': 'text', 'name': 'Name', 'bind': 'name'},
             {'kind': 'button', 'name': 'Choose Folder', 'action': '/choose_folder', 'assignTo': 'path'},
             {'kind': 'text', 'name': 'Folder', 'bind': 'path', 'options': {'disabled': True}},
+            {'kind': 'combo', 'name': 'Format', 'bind': 'format', 'options': {'values': ['safetensors', 'pt']}},
             {'kind': 'combo', 'name': 'DType', 'bind': 'dtype', 'options': {'values': ['fp32', 'fp16', 'bf16']}},
         ],
-        'properties': {'name': 'model', 'path': '.', 'dtype': 'fp16'},
+        'properties': {'name': 'model', 'path': '.', 'dtype': 'fp16', 'format': 'safetensors'},
         'tooltip': 'Save the input model to disk',
     }
