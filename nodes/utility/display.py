@@ -1,6 +1,6 @@
 from ..utils import get_params
 
-NODE_TYPE = 'model_saving/display'
+NODE_TYPE = 'utility/display'
 NODE_CATEGORY = 'Utility'
 
 
@@ -17,7 +17,7 @@ def get_spec():
     return {
         'type': NODE_TYPE,
         'title': 'Display',
-        'category': 'model_saving',
+        'category': 'utility',
         'node_category': NODE_CATEGORY,
         'inputs': [{'name': 'value', 'type': ''}],
         'outputs': [],

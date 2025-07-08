@@ -190,7 +190,7 @@ def run_graph():
         incoming_nodes[dst].append(src)
         incoming_edges[dst].append((e.get('in', 0), src, e.get('out', 0)))
 
-    sinks = [nid for nid, outs in outgoing.items() if nodes[nid]['type'].startswith('model_saving/')]
+    sinks = [nid for nid in nodes if not nodes[nid].get('outputs')]
     reachable = set()
     stack = sinks[:]
     while stack:
@@ -262,7 +262,7 @@ def run_graph_stream():
         incoming_nodes[dst].append(src)
         incoming_edges[dst].append((e.get('in', 0), src, e.get('out', 0)))
 
-    sinks = [nid for nid, outs in outgoing.items() if nodes[nid]['type'].startswith('model_saving/')]
+    sinks = [nid for nid in nodes if not nodes[nid].get('outputs')]
     reachable = set()
     stack = sinks[:]
     while stack:
