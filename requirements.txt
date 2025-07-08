@@ -1,3 +1,5 @@
 flask
 safetensors
 torch
+
+diffusers
