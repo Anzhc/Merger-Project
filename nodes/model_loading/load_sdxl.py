@@ -10,8 +10,9 @@ NODE_CATEGORY = 'Model Loading'
 
 def load_sdxl_submodules(checkpoint_file: str,
                           device: torch.device = None,
-                          torch_dtype: torch.dtype = None):
-    """Load SDXL checkpoint and return its main submodules."""
+                          torch_dtype: torch.dtype = None,
+                          dtype_str: str = 'fp16'):
+    """Load SDXL checkpoint and return state dicts of its main submodules."""
     print(f"Loading SDXL checkpoint from single file: {checkpoint_file}")
     try:
         pipe = StableDiffusionXLPipeline.from_single_file(checkpoint_file)
@@ -29,15 +30,27 @@ def load_sdxl_submodules(checkpoint_file: str,
         for module in [unet, vae, clip_l, clip_g]:
             module.to(device=device, dtype=torch_dtype)
 
-    # free pipeline
-    del pipe
+    def module_to_dict(module):
+        sd = {
+            k: (v.to(device=device, dtype=torch_dtype) if isinstance(v, torch.Tensor) else v)
+            for k, v in module.state_dict().items()
+        }
+        return {'data': sd, 'format': 'pt', 'dtype': dtype_str}
+
+    # extract state dicts and free modules
+    unet_dict = module_to_dict(unet)
+    clip_l_dict = module_to_dict(clip_l)
+    clip_g_dict = module_to_dict(clip_g)
+    vae_dict = module_to_dict(vae)
+
+    del pipe, unet, vae, clip_l, clip_g
     try:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     except Exception:
         pass
 
-    return unet, clip_l, clip_g, vae
+    return unet_dict, clip_l_dict, clip_g_dict, vae_dict
 
 
 def execute(node, inputs):
@@ -55,7 +68,9 @@ def execute(node, inputs):
     device = torch.device(get_device(node))
     path = os.path.expanduser(os.path.expandvars(path))
 
-    modules = load_sdxl_submodules(path, device=device, torch_dtype=torch_dtype)
+    modules = load_sdxl_submodules(
+        path, device=device, torch_dtype=torch_dtype, dtype_str=dtype
+    )
     if modules is None:
         raise RuntimeError('Failed to load SDXL checkpoint')
     # return as a tuple matching the output order
