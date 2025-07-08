@@ -293,7 +293,11 @@ def run_graph_stream():
                         input_values.append(val)
                     result = op(node, input_values)
                     memory.store(nid, result)
-                yield json.dumps({'node': nid}) + '\n'
+                info = {'node': nid}
+                props = node.get('properties')
+                if props:
+                    info['props'] = props
+                yield json.dumps(info) + '\n'
             yield json.dumps({'status': 'done'}) + '\n'
         finally:
             memory.flush()

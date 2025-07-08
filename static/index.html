@@ -369,6 +369,10 @@ document.getElementById('run').onclick = function(){
         if(node){
           node._prevBoxColor = node.boxcolor;
           node.boxcolor = '#0f0';
+          if(info.props){
+            Object.assign(node.properties, info.props);
+            syncNodeWidgets(node);
+          }
           last = node;
           canvas.draw(true,false);
         }
