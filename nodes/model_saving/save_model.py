@@ -12,7 +12,7 @@ def execute(node, inputs):
         raise ValueError('Save node requires an input model')
     model_obj = inputs[0]
     data = model_obj['data'] if isinstance(model_obj, dict) else model_obj
-    fmt = model_obj.get('format', 'pt') if isinstance(model_obj, dict) else 'pt'
+    fmt = model_obj.get('format', 'safetensors') if isinstance(model_obj, dict) else 'safetensors'
     dtype = params.get('dtype', 'fp16')
     dtype_map = {
         'fp16': torch.float16,
@@ -27,7 +27,7 @@ def execute(node, inputs):
     if fmt == 'safetensors':
         if ext != '.safetensors':
             name = os.path.splitext(name)[0] + '.safetensors'
-    else:
+    elif fmt == 'pt':
         if ext not in ['.pt', '.pth']:
             name = os.path.splitext(name)[0] + '.pt'
     out = os.path.join(path, name)
@@ -36,10 +36,10 @@ def execute(node, inputs):
                      for k, v in data.items()}
     else:
         conv_data = data
-    if fmt == 'safetensors':
-        save_file(conv_data, out)
-    else:
+    if fmt == 'pt':
         torch.save(conv_data, out)
+    else:
+        save_file(conv_data, out)
     return out
 
 
