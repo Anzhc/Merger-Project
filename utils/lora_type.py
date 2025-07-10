@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 from utils.to_diffusers import to_diffusers_mapping
-import logging
 import torch
 
 
@@ -222,7 +221,7 @@ def load_lora(lora, to_load, log_missing=True):
     if log_missing:
         for x in lora.keys():
             if x not in loaded_keys:
-                logging.warning("lora key not loaded: {}".format(x))
+                print("lora key not loaded: {}".format(x))
 
     return patch_dict
 
@@ -512,12 +511,12 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
             # An extra flag to pad the weight if the diff's shape is larger than the weight
             do_pad_weight = len(v) > 1 and v[1]['pad_weight']
             if do_pad_weight and diff.shape != weight.shape:
-                logging.info("Pad weight {} from {} to shape: {}".format(key, weight.shape, diff.shape))
+                print("Pad weight {} from {} to shape: {}".format(key, weight.shape, diff.shape))
                 weight = pad_tensor_to_shape(weight, diff.shape)
 
             if strength != 0.0:
                 if diff.shape != weight.shape:
-                    logging.warning("WARNING SHAPE MISMATCH {} WEIGHT NOT MERGED {} != {}".format(key, diff.shape, weight.shape))
+                    print("WARNING SHAPE MISMATCH {} WEIGHT NOT MERGED {} != {}".format(key, diff.shape, weight.shape))
                 else:
                     weight += function(strength * cast_tensor(diff, weight.device, weight.dtype))
         elif patch_type == "set":
@@ -552,7 +551,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                 else:
                     weight += function(((strength * alpha) * lora_diff).type(weight.dtype))
             except Exception as e:
-                logging.error("ERROR {} {} {}".format(patch_type, key, e))
+                print("ERROR {} {} {}".format(patch_type, key, e))
         elif patch_type == "lokr":
             w1 = v[0]
             w2 = v[1]
@@ -598,7 +597,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                 else:
                     weight += function(((strength * alpha) * lora_diff).type(weight.dtype))
             except Exception as e:
-                logging.error("ERROR {} {} {}".format(patch_type, key, e))
+                print("ERROR {} {} {}".format(patch_type, key, e))
         elif patch_type == "loha":
             w1a = v[0]
             w1b = v[1]
@@ -635,7 +634,7 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                 else:
                     weight += function(((strength * alpha) * lora_diff).type(weight.dtype))
             except Exception as e:
-                logging.error("ERROR {} {} {}".format(patch_type, key, e))
+                print("ERROR {} {} {}".format(patch_type, key, e))
         elif patch_type == "glora":
             dora_scale = v[5]
 
@@ -676,9 +675,9 @@ def calculate_weight(patches, weight, key, intermediate_dtype=torch.float32, ori
                 else:
                     weight += function(((strength * alpha) * lora_diff).type(weight.dtype))
             except Exception as e:
-                logging.error("ERROR {} {} {}".format(patch_type, key, e))
+                print("ERROR {} {} {}".format(patch_type, key, e))
         else:
-            logging.warning("patch type not recognized {} {}".format(patch_type, key))
+            print("patch type not recognized {} {}".format(patch_type, key))
 
         if old_weight is not None:
             weight = old_weight
