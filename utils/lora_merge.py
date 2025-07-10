@@ -1,5 +1,6 @@
 import torch
 from typing import Dict, List, Tuple, Optional
+import re
 
 # Prefixes used by kohya-style LoRA weights
 LORA_PREFIX_UNET = "lora_unet"
@@ -38,60 +39,70 @@ def merge_lora_models(
     clip_l_map = _build_key_map(clip_l) if clip_l is not None else {}
     clip_g_map = _build_key_map(clip_g) if clip_g is not None else {}
 
+    def route_name(name: str):
+        if name.startswith((LORA_PREFIX_TEXT_ENCODER1 + "_", "lycoris_te1_")):
+            return clip_l_map, clip_l, name.split("_", 1)[1] if "_" in name else name
+        if name.startswith((LORA_PREFIX_TEXT_ENCODER2 + "_", "lycoris_te2_")):
+            return clip_g_map, clip_g, name.split("_", 1)[1] if "_" in name else name
+        if name.startswith((LORA_PREFIX_TEXT_ENCODER + "_", "lycoris_te_")):
+            return clip_l_map, clip_l, name.split("_", 1)[1] if "_" in name else name
+        if name.startswith((LORA_PREFIX_UNET + "_", "lycoris_unet_")):
+            return unet_map, unet, name.split("_", 1)[1] if "_" in name else name
+        if name.startswith(("lora_", "lycoris_")):
+            return unet_map, unet, name.split("_", 1)[1] if "_" in name else name
+        return unet_map, unet, name
+
+    pattern = re.compile(
+        r"^(?P<name>.+)\.(?P<type>(?:lora|lycoris)_(?:down|up|mid))\.weight$"
+    )
+
     for lora_sd, ratio in zip(loras, ratios):
-        for key in list(lora_sd.keys()):
-            if not key.endswith("lora_down.weight"):
+        keys = list(lora_sd.keys())
+        for key in keys:
+            m = pattern.match(key)
+            if not m:
                 continue
-            base = key[:-len("lora_down.weight")]
-            up_key = base + "lora_up.weight"
-            alpha_key = base + "alpha"
+            name = m.group("name")
+            typ = m.group("type")
+
+            base = name
+            down_key = None
+            up_key = None
+            mid_key = None
+
+            if typ.endswith("down"):
+                down_key = key
+                up_key = name + "." + typ.replace("down", "up") + ".weight"
+                mid_key = name + "." + typ.replace("down", "mid") + ".weight"
+            else:
+                continue
 
             if up_key not in lora_sd:
                 continue
 
-            down = lora_sd[key].to(dtype)
+            down = lora_sd[down_key].to(dtype)
             up = lora_sd[up_key].to(dtype)
+            mid = lora_sd.get(mid_key)
+
             dim = down.size(0)
-            alpha = lora_sd.get(alpha_key, dim)
+            alpha = lora_sd.get(name + ".alpha", dim)
             scale = alpha / dim
 
-            target_map = None
-            target_sd = None
-            name = base
+            t_map, t_sd, mod_name = route_name(base)
+            mod_name = mod_name.replace(".", "_")
 
-            if name.startswith(LORA_PREFIX_UNET + "_"):
-                if not merge_unet:
-                    continue
-                name = name[len(LORA_PREFIX_UNET) + 1 :]
-                target_map = unet_map
-                target_sd = unet
-            elif name.startswith(LORA_PREFIX_TEXT_ENCODER1 + "_"):
-                if not merge_clip_l:
-                    continue
-                name = name[len(LORA_PREFIX_TEXT_ENCODER1) + 1 :]
-                target_map = clip_l_map
-                target_sd = clip_l
-            elif name.startswith(LORA_PREFIX_TEXT_ENCODER2 + "_"):
-                if not merge_clip_g:
-                    continue
-                name = name[len(LORA_PREFIX_TEXT_ENCODER2) + 1 :]
-                target_map = clip_g_map
-                target_sd = clip_g
-            elif name.startswith(LORA_PREFIX_TEXT_ENCODER + "_"):
-                if not merge_clip_l:
-                    continue
-                name = name[len(LORA_PREFIX_TEXT_ENCODER) + 1 :]
-                target_map = clip_l_map
-                target_sd = clip_l
-            else:
+            if t_map is None or mod_name not in t_map:
                 continue
 
-            if target_map is None or name not in target_map:
-                continue
-            base_key = target_map[name]
-            weight = target_sd[base_key].to(dtype)
+            base_key = t_map[mod_name]
+            weight = t_sd[base_key].to(dtype)
 
-            if len(weight.shape) == 2:
+            if mid is not None:
+                wa = up.view(up.size(0), -1).transpose(0, 1)
+                wb = down.view(down.size(0), -1)
+                update = torch.einsum("ij...,ip,jr->pr...", mid.to(dtype), wa, wb)
+                update = update.view_as(weight) * scale * ratio
+            elif len(weight.shape) == 2:
                 if len(up.shape) == 4:
                     up = up.squeeze(3).squeeze(2)
                     down = down.squeeze(3).squeeze(2)
@@ -105,6 +116,7 @@ def merge_lora_models(
             else:
                 conv = torch.nn.functional.conv2d(down.permute(1, 0, 2, 3), up).permute(1, 0, 2, 3)
                 update = conv * scale * ratio
-            target_sd[base_key] = (weight + update).to(dtype)
+
+            t_sd[base_key] = (weight + update).to(dtype)
 
     return unet, clip_l, clip_g
