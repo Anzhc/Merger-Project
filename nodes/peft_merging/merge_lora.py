@@ -5,7 +5,7 @@ import torch
 NODE_TYPE = 'peft_merging/merge_lora'
 NODE_CATEGORY = 'PEFT merging'
 
-def _merge_model(model_state, lora_states, key_map_func, model_type, dtype):
+def _merge_model(model_state, lora_states, key_map_func, model_type, dtype, strength):
     if model_state is None:
         return None
     key_map = key_map_func(model_state, {}, model_type) if model_type is not None else key_map_func(model_state, {})
@@ -13,7 +13,7 @@ def _merge_model(model_state, lora_states, key_map_func, model_type, dtype):
     for lora in lora_states:
         patch_dict = load_lora(lora, key_map, log_missing=False)
         for k, v in patch_dict.items():
-            patches.setdefault(k, []).append((1.0, v, 1.0, None, None))
+            patches.setdefault(k, []).append((strength, v, 1.0, None, None))
     for k, plist in patches.items():
         if k in model_state:
             model_state[k] = calculate_weight(plist, model_state[k], k, intermediate_dtype=dtype)
@@ -28,6 +28,9 @@ def execute(node, inputs):
     merge_clip_l = params.get('merge_clip_l', True)
     merge_clip_g = params.get('merge_clip_g', True)
     model_type = params.get('model_type', None)
+    strength_unet = float(params.get('strength_unet', 1.0))
+    strength_clip_l = float(params.get('strength_clip_l', 1.0))
+    strength_clip_g = float(params.get('strength_clip_g', 1.0))
 
     unet = inputs[0] if len(inputs) > 0 else None
     clip_l = inputs[1] if len(inputs) > 1 else None
@@ -38,7 +41,7 @@ def execute(node, inputs):
     if unet is not None:
         sd = unet['data'] if isinstance(unet, dict) else unet
         if merge_unet:
-            sd = _merge_model(sd, loras, model_lora_keys_unet, model_type, inter_dtype)
+            sd = _merge_model(sd, loras, model_lora_keys_unet, model_type, inter_dtype, strength_unet)
         out.append({'data': sd, 'format': unet.get('format', 'pt'), 'dtype': unet.get('dtype')})
     else:
         out.append(None)
@@ -46,7 +49,7 @@ def execute(node, inputs):
     if clip_l is not None:
         sd = clip_l['data'] if isinstance(clip_l, dict) else clip_l
         if merge_clip_l:
-            sd = _merge_model(sd, loras, model_lora_keys_clip, None, inter_dtype)
+            sd = _merge_model(sd, loras, model_lora_keys_clip, None, inter_dtype, strength_clip_l)
         out.append({'data': sd, 'format': clip_l.get('format', 'pt'), 'dtype': clip_l.get('dtype')})
     else:
         out.append(None)
@@ -54,7 +57,7 @@ def execute(node, inputs):
     if clip_g is not None:
         sd = clip_g['data'] if isinstance(clip_g, dict) else clip_g
         if merge_clip_g:
-            sd = _merge_model(sd, loras, model_lora_keys_clip, None, inter_dtype)
+            sd = _merge_model(sd, loras, model_lora_keys_clip, None, inter_dtype, strength_clip_g)
         out.append({'data': sd, 'format': clip_g.get('format', 'pt'), 'dtype': clip_g.get('dtype')})
     else:
         out.append(None)
@@ -91,6 +94,9 @@ def get_spec():
             {'kind': 'checkbox', 'name': 'Merge Unet', 'bind': 'merge_unet'},
             {'kind': 'checkbox', 'name': 'Merge Clip L', 'bind': 'merge_clip_l'},
             {'kind': 'checkbox', 'name': 'Merge Clip G', 'bind': 'merge_clip_g'},
+            {'kind': 'slider', 'name': 'Unet Strength', 'bind': 'strength_unet', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
+            {'kind': 'slider', 'name': 'Clip L Strength', 'bind': 'strength_clip_l', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
+            {'kind': 'slider', 'name': 'Clip G Strength', 'bind': 'strength_clip_g', 'options': {'min': 0, 'max': 1, 'step': 0.01}},
             {'kind': 'combo', 'name': 'Model Type', 'bind': 'model_type', 'options': {'values': ['cascade', 'sd3', 'auraflow', 'pixart', 'hunyuan_dit', 'flux', 'genmo_mochi', 'hunyuan_video', 'base']}},
         ],
         'properties': {
@@ -98,6 +104,9 @@ def get_spec():
             'merge_unet': True,
             'merge_clip_l': True,
             'merge_clip_g': True,
+            'strength_unet': 1.0,
+            'strength_clip_l': 1.0,
+            'strength_clip_g': 1.0,
             'model_type': 'base'
         },
         'tooltip': 'Merge multiple LoRA models into supplied UNet and CLIP checkpoints.'
