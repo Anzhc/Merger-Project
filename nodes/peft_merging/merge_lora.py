@@ -1,23 +1,10 @@
 from ..utils import get_params
-from utils.lora_type import load_lora, model_lora_keys_unet, model_lora_keys_clip, calculate_weight
+from utils.lora_type import load_lora_for_models
 import torch
 
 NODE_TYPE = 'peft_merging/merge_lora'
 NODE_CATEGORY = 'PEFT merging'
 
-def _merge_model(model_state, lora_states, key_map_func, model_type, dtype, strength):
-    if model_state is None:
-        return None
-    key_map = key_map_func(model_state, {}, model_type) if model_type is not None else key_map_func(model_state, {})
-    patches = {}
-    for lora in lora_states:
-        patch_dict = load_lora(lora, key_map, log_missing=False)
-        for k, v in patch_dict.items():
-            patches.setdefault(k, []).append((strength, v, 1.0, None, None))
-    for k, plist in patches.items():
-        if k in model_state:
-            model_state[k] = calculate_weight(plist, model_state[k], k, intermediate_dtype=dtype)
-    return model_state
 
 def execute(node, inputs):
     params = get_params(node)
@@ -37,31 +24,65 @@ def execute(node, inputs):
     clip_g = inputs[2] if len(inputs) > 2 else None
     loras = [x['data'] if isinstance(x, dict) else x for x in inputs[3:] if x is not None]
 
-    out = []
-    if unet is not None:
-        sd = unet['data'] if isinstance(unet, dict) else unet
-        if merge_unet:
-            sd = _merge_model(sd, loras, model_lora_keys_unet, model_type, inter_dtype, strength_unet)
-        out.append({'data': sd, 'format': unet.get('format', 'pt'), 'dtype': unet.get('dtype')})
+    if isinstance(unet, dict):
+        unet_sd = unet.get('data')
+        unet_fmt = unet.get('format', 'pt')
+        unet_dtype = unet.get('dtype')
     else:
-        out.append(None)
+        unet_sd = unet
+        unet_fmt = 'pt'
+        unet_dtype = None
+
+    if isinstance(clip_l, dict):
+        clip_l_sd = clip_l.get('data')
+        clip_l_fmt = clip_l.get('format', 'pt')
+        clip_l_dtype = clip_l.get('dtype')
+    else:
+        clip_l_sd = clip_l
+        clip_l_fmt = 'pt'
+        clip_l_dtype = None
+
+    if isinstance(clip_g, dict):
+        clip_g_sd = clip_g.get('data')
+        clip_g_fmt = clip_g.get('format', 'pt')
+        clip_g_dtype = clip_g.get('dtype')
+    else:
+        clip_g_sd = clip_g
+        clip_g_fmt = 'pt'
+        clip_g_dtype = None
+
+    for idx, lora in enumerate(loras):
+        filename = f"lora_{idx}"
+        unet_sd, clip_l_sd, clip_g_sd = load_lora_for_models(
+            unet_sd if merge_unet else None,
+            clip_l_sd if merge_clip_l else None,
+            clip_g_sd if merge_clip_g else None,
+            lora,
+            strength_unet,
+            strength_clip_l,
+            strength_clip_g,
+            filename=filename,
+            model_type=model_type,
+            dtype=inter_dtype,
+        )
+
+    outputs = []
+    if unet is not None:
+        outputs.append({'data': unet_sd, 'format': unet_fmt, 'dtype': unet_dtype})
+    else:
+        outputs.append(None)
 
     if clip_l is not None:
-        sd = clip_l['data'] if isinstance(clip_l, dict) else clip_l
-        if merge_clip_l:
-            sd = _merge_model(sd, loras, model_lora_keys_clip, None, inter_dtype, strength_clip_l)
-        out.append({'data': sd, 'format': clip_l.get('format', 'pt'), 'dtype': clip_l.get('dtype')})
+        outputs.append({'data': clip_l_sd, 'format': clip_l_fmt, 'dtype': clip_l_dtype})
     else:
-        out.append(None)
+        outputs.append(None)
 
     if clip_g is not None:
-        sd = clip_g['data'] if isinstance(clip_g, dict) else clip_g
-        if merge_clip_g:
-            sd = _merge_model(sd, loras, model_lora_keys_clip, None, inter_dtype, strength_clip_g)
-        out.append({'data': sd, 'format': clip_g.get('format', 'pt'), 'dtype': clip_g.get('dtype')})
+        outputs.append({'data': clip_g_sd, 'format': clip_g_fmt, 'dtype': clip_g_dtype})
     else:
-        out.append(None)
-    return tuple(out)
+        outputs.append(None)
+
+    return tuple(outputs)
 
 
 def get_spec():

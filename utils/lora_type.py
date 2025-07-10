@@ -38,6 +38,28 @@ LORA_CLIP_MAP = {
 }
 
 
+def convert_lora_bfl_control(sd):
+    """Convert BFL control LoRA weights to the standard format."""
+    sd_out = {}
+    for k in sd:
+        k_to = "diffusion_model.{}".format(
+            k.replace(".lora_B.bias", ".diff_b").replace("_norm.scale", "_norm.scale.set_weight")
+        )
+        sd_out[k_to] = sd[k]
+
+    sd_out["diffusion_model.img_in.reshape_weight"] = torch.tensor(
+        [sd["img_in.lora_B.weight"].shape[0], sd["img_in.lora_A.weight"].shape[1]]
+    )
+    return sd_out
+
+
+def convert_lora(sd):
+    """Handle format-specific LoRA conversions before loading."""
+    if "img_in.lora_A.weight" in sd and "single_blocks.0.norm.key_norm.scale" in sd:
+        return convert_lora_bfl_control(sd)
+    return sd
+
+
 def load_lora(lora, to_load, log_missing=True):
     patch_dict = {}
     loaded_keys = set()
@@ -224,6 +246,67 @@ def load_lora(lora, to_load, log_missing=True):
                 print("lora key not loaded: {}".format(x))
 
     return patch_dict
+
+
+def load_lora_for_models(
+    unet,
+    clip_l,
+    clip_g,
+    lora,
+    strength_unet,
+    strength_clip_l,
+    strength_clip_g,
+    filename="default",
+    model_type=None,
+    dtype=torch.float32,
+):
+    """Apply a LoRA ``lora`` to provided model state dicts."""
+    key_map = {}
+    if unet is not None and strength_unet != 0:
+        key_map = model_lora_keys_unet(unet, key_map, model_type)
+    if clip_l is not None and strength_clip_l != 0:
+        key_map = model_lora_keys_clip(clip_l, key_map)
+    if clip_g is not None and strength_clip_g != 0:
+        key_map = model_lora_keys_clip(clip_g, key_map)
+
+    if not key_map:
+        print("[LORA] No matching keys found; skipping")
+        return unet, clip_l, clip_g
+
+    lora = convert_lora(lora)
+    print(f"[LORA] Applying {filename}")
+    loaded = load_lora(lora, key_map)
+
+    def apply_patches(model_state, strength):
+        if model_state is None or strength == 0:
+            return set()
+        loaded_keys = set()
+        for k, v in loaded.items():
+            if k in model_state:
+                model_state[k] = calculate_weight(
+                    [(strength, v, 1.0, None, None)],
+                    model_state[k],
+                    k,
+                    intermediate_dtype=dtype,
+                )
+                loaded_keys.add(k)
+        return loaded_keys
+
+    keys_unet = apply_patches(unet, strength_unet)
+    keys_clip_l = apply_patches(clip_l, strength_clip_l)
+    keys_clip_g = apply_patches(clip_g, strength_clip_g)
+
+    for k in loaded:
+        if k not in keys_unet and k not in keys_clip_l and k not in keys_clip_g:
+            print(f"NOT LOADED {k}")
+
+    if keys_unet or keys_clip_l or keys_clip_g:
+        total = len(keys_unet) + len(keys_clip_l) + len(keys_clip_g)
+        print(
+            f"[LORA] Loaded {filename} with {total} keys (UNet: {len(keys_unet)}, CLIP L: {len(keys_clip_l)}, CLIP G: {len(keys_clip_g)})"
+        )
+
+    return unet, clip_l, clip_g
 
 def model_lora_keys_clip(model, key_map={}):
     if hasattr(model, "state_dict"):
