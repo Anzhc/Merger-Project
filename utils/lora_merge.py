@@ -65,73 +65,100 @@ def merge_lora_models(
         return target_map, target_sd, name
 
     pattern = re.compile(
-        r"^(?P<name>.+)\.(?P<type>(?:lora|lycoris)_(?:down|up|mid))\.weight$"
+        r"^(?P<name>.+)\.(?P<type>(?:lora|lycoris)_(?:down|up|mid)|[ab][12])\.weight$"
     )
 
+    def matmul_update(up, down, weight):
+        if len(weight.shape) == 2:
+            if len(up.shape) == 4:
+                up = up.squeeze(3).squeeze(2)
+                down = down.squeeze(3).squeeze(2)
+            return torch.matmul(up, down)
+        if down.dim() == 4 and tuple(down.shape[2:]) == (1, 1):
+            return (
+                torch.matmul(up.squeeze(3).squeeze(2), down.squeeze(3).squeeze(2))
+                .unsqueeze(2)
+                .unsqueeze(3)
+            )
+        conv = torch.nn.functional.conv2d(down.permute(1, 0, 2, 3), up).permute(1, 0, 2, 3)
+        return conv
+
+    def loha_update(w1b, w1a, w2b, w2a):
+        r = w1a.size(0)
+        wa = w1b.reshape(w1b.size(0), r)
+        wb = w1a.reshape(r, -1)
+        wc = w2b.reshape(w2b.size(0), r)
+        wd = w2a.reshape(r, -1)
+        out = (wa @ wb) * (wc @ wd)
+        return out.reshape(w1b.size(0), w2a.size(1), *w1a.shape[2:])
+
     for lora_sd, ratio in zip(loras, ratios):
-        keys = list(lora_sd.keys())
-        for key in keys:
+        groups: Dict[str, Dict[str, torch.Tensor]] = {}
+        for key, tensor in lora_sd.items():
+            if key.endswith(".alpha"):
+                base = key[: -6]
+                groups.setdefault(base, {})["alpha"] = tensor
+                continue
+            if not key.endswith(".weight"):
+                continue
             m = pattern.match(key)
             if not m:
                 print(f"[merge_lora] skip unmatched key: {key}")
                 continue
-            name = m.group("name")
+            base = m.group("name")
             typ = m.group("type")
-
-            base = name
-            down_key = None
-            up_key = None
-            mid_key = None
-
-            if typ.endswith("down"):
-                down_key = key
-                up_key = name + "." + typ.replace("down", "up") + ".weight"
-                mid_key = name + "." + typ.replace("down", "mid") + ".weight"
-            else:
+            part = None
+            if typ.endswith("down") or typ == "a1":
+                part = "down1"
+            elif typ.endswith("up") or typ == "b1":
+                part = "up1"
+            elif typ in {"a2", "lora_mid", "lycoris_mid"}:
+                part = "down2"
+            elif typ == "b2":
+                part = "up2"
+            elif typ.endswith("mid"):
+                part = "mid"
+            if part is None:
                 continue
+            groups.setdefault(base, {})[part] = tensor
 
-            if up_key not in lora_sd:
-                print(f"[merge_lora] missing up weight for {down_key}")
-                continue
-
-            down = lora_sd[down_key].to(dtype)
-            up = lora_sd[up_key].to(dtype)
-            mid = lora_sd.get(mid_key)
-
-            dim = down.size(0)
-            alpha = lora_sd.get(name + ".alpha", dim)
-            scale = alpha / dim
-
+        for base, parts in groups.items():
             t_map, t_sd, mod_name = route_name(base)
             mod_name = mod_name.replace(".", "_")
-
             if t_map is None or mod_name not in t_map:
-                print(f"[merge_lora] no module found for {mod_name} ({key})")
+                print(f"[merge_lora] no module found for {mod_name} ({base})")
                 continue
 
-            base_key = t_map[mod_name]
-            weight = t_sd[base_key].to(dtype)
+            weight_key = t_map[mod_name]
+            weight = t_sd[weight_key].to(dtype)
 
-            if mid is not None:
-                wa = up.view(up.size(0), -1).transpose(0, 1)
-                wb = down.view(down.size(0), -1)
+            down1 = parts.get("down1")
+            up1 = parts.get("up1")
+            down2 = parts.get("down2")
+            up2 = parts.get("up2")
+            mid = parts.get("mid")
+
+            if down1 is None or up1 is None:
+                print(f"[merge_lora] missing pair for {base}")
+                continue
+
+            dim = down1.size(0)
+            alpha = parts.get("alpha", dim)
+            scale = alpha / dim
+
+            if down2 is not None and up2 is not None:
+                update = loha_update(up1.to(dtype), down1.to(dtype), up2.to(dtype), down2.to(dtype))
+                update = update.to(dtype) * scale * ratio
+                if update.shape != weight.shape:
+                    update = update.view_as(weight)
+            elif mid is not None:
+                wa = up1.view(up1.size(0), -1).transpose(0, 1)
+                wb = down1.view(down1.size(0), -1)
                 update = torch.einsum("ij...,ip,jr->pr...", mid.to(dtype), wa, wb)
                 update = update.view_as(weight) * scale * ratio
-            elif len(weight.shape) == 2:
-                if len(up.shape) == 4:
-                    up = up.squeeze(3).squeeze(2)
-                    down = down.squeeze(3).squeeze(2)
-                update = torch.matmul(up, down) * scale * ratio
-            elif down.dim() == 4 and tuple(down.shape[2:]) == (1, 1):
-                update = (
-                    torch.matmul(up.squeeze(3).squeeze(2), down.squeeze(3).squeeze(2))
-                    .unsqueeze(2)
-                    .unsqueeze(3)
-                ) * scale * ratio
             else:
-                conv = torch.nn.functional.conv2d(down.permute(1, 0, 2, 3), up).permute(1, 0, 2, 3)
-                update = conv * scale * ratio
+                update = matmul_update(up1.to(dtype), down1.to(dtype), weight) * scale * ratio
 
-            t_sd[base_key] = (weight + update).to(dtype)
+            t_sd[weight_key] = (weight + update).to(dtype)
 
     return unet, clip_l, clip_g
