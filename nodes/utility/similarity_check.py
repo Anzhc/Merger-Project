@@ -11,14 +11,6 @@ def _tensor(v):
     return torch.tensor(v, dtype=torch.float32).view(-1)
 
 
-def _jaccard(d1, d2):
-    k1 = set(d1.keys())
-    k2 = set(d2.keys())
-    if not k1 and not k2:
-        return 100.0
-    return 100.0 * len(k1 & k2) / len(k1 | k2)
-
-
 def _magnitude(d1, d2):
     keys = set(d1.keys()) & set(d2.keys())
     if not keys:
@@ -61,6 +53,44 @@ def _cosine(d1, d2):
     return (cos + 1) * 50
 
 
+def _l1(d1, d2):
+    keys = set(d1.keys()) & set(d2.keys())
+    if not keys:
+        return 0.0
+    diffs = []
+    for k in keys:
+        t1 = _tensor(d1[k])
+        t2 = _tensor(d2[k])
+        diff = torch.sum(torch.abs(t1 - t2))
+        denom = torch.sum(torch.abs(t1)) + torch.sum(torch.abs(t2))
+        if denom == 0:
+            continue
+        diffs.append((diff / denom).item())
+    if not diffs:
+        return 0.0
+    avg = sum(diffs) / len(diffs)
+    return max(0.0, 1 - avg) * 100
+
+
+def _l2(d1, d2):
+    keys = set(d1.keys()) & set(d2.keys())
+    if not keys:
+        return 0.0
+    diffs = []
+    for k in keys:
+        t1 = _tensor(d1[k])
+        t2 = _tensor(d2[k])
+        diff = torch.sqrt(torch.sum((t1 - t2) ** 2))
+        denom = torch.sqrt(torch.sum(t1 ** 2)) + torch.sqrt(torch.sum(t2 ** 2))
+        if denom == 0:
+            continue
+        diffs.append((diff / denom).item())
+    if not diffs:
+        return 0.0
+    avg = sum(diffs) / len(diffs)
+    return max(0.0, 1 - avg) * 100
+
+
 def execute(node, inputs):
     params = get_params(node)
     if len(inputs) < 2:
@@ -68,13 +98,17 @@ def execute(node, inputs):
     m1, m2 = inputs[0], inputs[1]
     d1 = m1['data'] if isinstance(m1, dict) else m1
     d2 = m2['data'] if isinstance(m2, dict) else m2
-    algo = params.get('algorithm', 'jaccard')
+    algo = params.get('algorithm', 'cosine')
     if algo == 'magnitude':
         score = _magnitude(d1, d2)
     elif algo == 'cosine':
         score = _cosine(d1, d2)
+    elif algo == 'l1':
+        score = _l1(d1, d2)
+    elif algo == 'l2':
+        score = _l2(d1, d2)
     else:
-        score = _jaccard(d1, d2)
+        score = _magnitude(d1, d2)
     return score
 
 
@@ -93,9 +127,9 @@ def get_spec():
                 'kind': 'combo',
                 'name': 'Algorithm',
                 'bind': 'algorithm',
-                'options': {'values': ['jaccard', 'magnitude', 'cosine']},
+                'options': {'values': ['magnitude', 'cosine', 'l1', 'l2']},
             }
         ],
-        'properties': {'algorithm': 'jaccard'},
+        'properties': {'algorithm': 'cosine'},
         'tooltip': 'Compute similarity between two models (0-100%)',
     }
