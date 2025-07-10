@@ -10,14 +10,18 @@ LORA_PREFIX_TEXT_ENCODER2 = "lora_te2"
 
 
 def _build_key_map(state_dict: Dict[str, torch.Tensor]) -> Dict[str, str]:
-    """Map normalized parameter names to actual keys."""
+    """Map normalized weight names to keys.
+
+    Only parameters ending with ``.weight`` are considered to avoid
+    accidentally routing LoRA tensors to a bias tensor. The keys are
+    normalized by replacing ``.`` with ``_`` to match LoRA naming.
+    """
+
     mapping = {}
     for key in state_dict.keys():
-        base = key
-        if key.endswith(".weight"):
-            base = key[:-7]
-        elif key.endswith(".bias"):
-            base = key[:-5]
+        if not key.endswith(".weight"):
+            continue
+        base = key[:-7]
         mapping[base.replace(".", "_")] = key
     return mapping
 
@@ -101,18 +105,19 @@ def merge_lora_models(
         if mid is not None:
             b_update = tucker_weight_from_conv(b1, b2, mid)
         else:
-            b1_f = b1.view(b1.size(0), -1)
-            b2_f = b2.view(b2.size(0), -1)
-            b_update = (b1_f @ b2_f).view_as(weight)
+            b1_f = b1.reshape(b1.size(0), -1)
+            b2_f = b2.reshape(b2.size(0), -1)
+            b_update = b1_f @ b2_f
+            b_update = b_update.reshape(weight.shape)
 
-        a1_f = a1.view(a1.size(0), -1)
-        a2_f = a2.view(a2.size(0), -1)
+        a1_f = a1.reshape(a1.size(0), -1)
+        a2_f = a2.reshape(a2.size(0), -1)
         if weight.dim() > 2:
             w_wa1 = torch.einsum("o i ..., i r -> o r ...", weight, a1_f)
             wa2 = torch.einsum("o r ..., r i -> o i ...", w_wa1, a2_f)
         else:
             wa2 = (weight @ a1_f) @ a2_f
-        wa2 = wa2.view_as(weight)
+        wa2 = wa2.reshape(weight.shape)
         return b_update + wa2
 
     for lora_sd, ratio in zip(loras, ratios):
@@ -145,6 +150,12 @@ def merge_lora_models(
 
         for base, parts in groups.items():
             t_map, t_sd, mod_name = route_name(base)
+            if t_sd is unet and not merge_unet:
+                continue
+            if t_sd is clip_l and not merge_clip_l:
+                continue
+            if t_sd is clip_g and not merge_clip_g:
+                continue
             mod_name = mod_name.replace(".", "_")
             if t_map is None or mod_name not in t_map:
                 print(f"[merge_lora] no module found for {mod_name} ({base})")
