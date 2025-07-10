@@ -43,29 +43,29 @@ def merge_lora_models(
         """Return target map and module name for a LoRA prefix."""
         target_map, target_sd = unet_map, unet
 
-        if name.startswith((LORA_PREFIX_TEXT_ENCODER1 + "_", "lycoris_te1_")):
-            target_map, target_sd = clip_l_map, clip_l
-            name = name.split("_", 1)[1]
-        elif name.startswith((LORA_PREFIX_TEXT_ENCODER2 + "_", "lycoris_te2_")):
-            target_map, target_sd = clip_g_map, clip_g
-            name = name.split("_", 1)[1]
-        elif name.startswith((LORA_PREFIX_TEXT_ENCODER + "_", "lycoris_te_")):
-            target_map, target_sd = clip_l_map, clip_l
-            name = name.split("_", 1)[1]
-        elif name.startswith((LORA_PREFIX_UNET + "_", "lycoris_unet_")):
-            target_map, target_sd = unet_map, unet
-            name = name.split("_", 1)[1]
-        elif name.startswith(("lora_", "lycoris_")):
-            target_map, target_sd = unet_map, unet
-            name = name.split("_", 1)[1]
+        prefixes = [
+            (LORA_PREFIX_TEXT_ENCODER1 + "_", clip_l_map, clip_l),
+            ("lycoris_te1_", clip_l_map, clip_l),
+            (LORA_PREFIX_TEXT_ENCODER2 + "_", clip_g_map, clip_g),
+            ("lycoris_te2_", clip_g_map, clip_g),
+            (LORA_PREFIX_TEXT_ENCODER + "_", clip_l_map, clip_l),
+            ("lycoris_te_", clip_l_map, clip_l),
+            (LORA_PREFIX_UNET + "_", unet_map, unet),
+            ("lycoris_unet_", unet_map, unet),
+            ("lora_", unet_map, unet),
+            ("lycoris_", unet_map, unet),
+        ]
 
-        if name.startswith(("up_", "down_", "mid_")):
-            name = name.split("_", 1)[1]
+        for pfx, mp, sd in prefixes:
+            if name.startswith(pfx):
+                target_map, target_sd = mp, sd
+                name = name[len(pfx):]
+                break
 
         return target_map, target_sd, name
 
     pattern = re.compile(
-        r"^(?P<name>.+)\.(?P<type>(?:lora|lycoris)_(?:down|up|mid)|[ab][12])\.weight$"
+        r"^(?P<name>.+)\.(?P<type>(?:lora|lycoris)_(?:down|up|mid)|a1|a2|b1|b2|bm)\.weight$"
     )
 
     def matmul_update(up, down, weight):
@@ -92,6 +92,25 @@ def merge_lora_models(
         out = (wa @ wb) * (wc @ wd)
         return out.reshape(w1b.size(0), w2a.size(1), *w1a.shape[2:])
 
+    def tucker_weight_from_conv(up, down, mid):
+        up = up.reshape(up.size(0), up.size(1))
+        down = down.reshape(down.size(0), down.size(1))
+        return torch.einsum("m n ..., i m, n j -> i j ...", mid, up, down)
+
+    def glora_update(weight, a1, a2, b1, b2, mid=None):
+        if mid is not None:
+            b_update = tucker_weight_from_conv(b1, b2, mid)
+        else:
+            b_update = matmul_update(b1, b2, weight)
+
+        w_flat = weight.reshape(weight.size(0), weight.size(1), -1)
+        a1_f = a1.reshape(a1.size(0), -1)
+        a2_f = a2.reshape(a2.size(0), -1)
+        wa1 = torch.einsum("o i k, i r -> o r k", w_flat, a1_f)
+        wa2 = torch.einsum("o r k, r i -> o i k", wa1, a2_f)
+        wa2 = wa2.reshape_as(weight)
+        return b_update + wa2
+
     for lora_sd, ratio in zip(loras, ratios):
         groups: Dict[str, Dict[str, torch.Tensor]] = {}
         for key, tensor in lora_sd.items():
@@ -108,16 +127,14 @@ def merge_lora_models(
             base = m.group("name")
             typ = m.group("type")
             part = None
-            if typ.endswith("down") or typ == "a1":
-                part = "down1"
-            elif typ.endswith("up") or typ == "b1":
-                part = "up1"
-            elif typ in {"a2", "lora_mid", "lycoris_mid"}:
-                part = "down2"
-            elif typ == "b2":
-                part = "up2"
-            elif typ.endswith("mid"):
+            if typ in {"lora_down", "lycoris_down"}:
+                part = "down"
+            elif typ in {"lora_up", "lycoris_up"}:
+                part = "up"
+            elif typ in {"lora_mid", "lycoris_mid"}:
                 part = "mid"
+            elif typ in {"a1", "a2", "b1", "b2", "bm"}:
+                part = typ
             if part is None:
                 continue
             groups.setdefault(base, {})[part] = tensor
@@ -132,32 +149,39 @@ def merge_lora_models(
             weight_key = t_map[mod_name]
             weight = t_sd[weight_key].to(dtype)
 
-            down1 = parts.get("down1")
-            up1 = parts.get("up1")
-            down2 = parts.get("down2")
-            up2 = parts.get("up2")
+            down = parts.get("down")
+            up = parts.get("up")
             mid = parts.get("mid")
+            a1 = parts.get("a1")
+            a2 = parts.get("a2")
+            b1 = parts.get("b1")
+            b2 = parts.get("b2")
+            bm = parts.get("bm")
 
-            if down1 is None or up1 is None:
+            if (down is None or up is None) and not (
+                a1 is not None and a2 is not None and b1 is not None and b2 is not None
+            ):
                 print(f"[merge_lora] missing pair for {base}")
                 continue
 
-            dim = down1.size(0)
+            dim = (down or a1 or b1).size(0)
             alpha = parts.get("alpha", dim)
             scale = alpha / dim
 
-            if down2 is not None and up2 is not None:
-                update = loha_update(up1.to(dtype), down1.to(dtype), up2.to(dtype), down2.to(dtype))
-                update = update.to(dtype) * scale * ratio
-                if update.shape != weight.shape:
-                    update = update.view_as(weight)
-            elif mid is not None:
-                wa = up1.view(up1.size(0), -1).transpose(0, 1)
-                wb = down1.view(down1.size(0), -1)
-                update = torch.einsum("ij...,ip,jr->pr...", mid.to(dtype), wa, wb)
-                update = update.view_as(weight) * scale * ratio
+            if a1 is not None and a2 is not None and b1 is not None and b2 is not None:
+                update = glora_update(weight, a1.to(dtype), a2.to(dtype), b1.to(dtype), b2.to(dtype), bm.to(dtype) if bm is not None else None)
+                update = update * scale * ratio
+            elif down is not None and up is not None:
+                if mid is not None:
+                    wa = up.view(up.size(0), -1).transpose(0, 1)
+                    wb = down.view(down.size(0), -1)
+                    update = torch.einsum("ij...,ip,jr->pr...", mid.to(dtype), wa, wb)
+                    update = update.view_as(weight) * scale * ratio
+                else:
+                    update = matmul_update(up.to(dtype), down.to(dtype), weight) * scale * ratio
             else:
-                update = matmul_update(up1.to(dtype), down1.to(dtype), weight) * scale * ratio
+                print(f"[merge_lora] missing pair for {base}")
+                continue
 
             t_sd[weight_key] = (weight + update).to(dtype)
 
