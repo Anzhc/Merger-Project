@@ -164,7 +164,8 @@ def merge_lora_models(
                 print(f"[merge_lora] missing pair for {base}")
                 continue
 
-            dim = (down or a1 or b1).size(0)
+            src = down if down is not None else a1 if a1 is not None else b1
+            dim = src.size(0)
             alpha = parts.get("alpha", dim)
             scale = alpha / dim
 
