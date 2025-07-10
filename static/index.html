@@ -264,11 +264,13 @@ function registerSpec(spec){
           }
         };
         if(editable){
-          widget.mouse = function(event,pos,canvasRef){
+          widget.mouse = function(event,pos,node){
             if(event.type !== 'pointerdown') return;
-            var canvasEl = canvasRef.canvas || canvasRef;
+            var canvas = LiteGraph.LGraphCanvas.active_canvas;
+            if(!canvas) return;
+            var canvasEl = canvas.canvas;
             var rect = canvasEl.getBoundingClientRect();
-            var gc = canvasRef.convertOffsetToCanvas([this.node.pos[0] + this._margin, this.node.pos[1] + this._y]);
+            var gc = canvas.convertOffsetToCanvas([node.pos[0] + this._margin, node.pos[1] + this._y]);
             var left = rect.left + gc[0];
             var top = rect.top + gc[1];
             var ta = document.createElement('textarea');
@@ -277,14 +279,14 @@ function registerSpec(spec){
             ta.style.top = top + 'px';
             ta.style.width = this._widget_width + 'px';
             ta.style.height = this._height + 'px';
-            ta.value = this.node.properties[this.options.bindProp] || '';
+            ta.value = node.properties[this.options.bindProp] || '';
             canvasEl.parentNode.appendChild(ta);
             var selfw = this;
             ta.focus();
             var finish = function(){
-              selfw.node.properties[selfw.options.bindProp] = ta.value;
+              node.properties[selfw.options.bindProp] = ta.value;
               canvasEl.parentNode.removeChild(ta);
-              canvasRef.setDirty(true,true);
+              canvas.setDirty(true,true);
             };
             ta.addEventListener('blur', finish);
             ta.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ ta.blur(); } });
