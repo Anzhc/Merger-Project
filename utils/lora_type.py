@@ -390,10 +390,18 @@ def model_lora_keys_clip(model, key_map={}):
     return key_map
 
 def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
+    """Build LoRA key map for a UNet model or state dict."""
     if hasattr(model, "state_dict"):
         sd = model.state_dict()
+        unet_config = getattr(model, "model_config", None) or getattr(model, "config", None)
     else:
-        sd = model
+        # expect a plain state dict or a dict with metadata
+        if isinstance(model, dict) and "data" in model:
+            sd = model["data"]
+            unet_config = model.get("config") or model.get("model_config")
+        else:
+            sd = model
+            unet_config = None
     sdk = sd.keys()
 
     for k in sdk:
@@ -405,7 +413,7 @@ def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
             else:
                 key_map["{}".format(k)] = k #generic lora format for not .weight without any weird key names
 
-    diffusers_keys = to_diffusers_mapping.unet_to_diffusers(model)
+    diffusers_keys = to_diffusers_mapping.unet_to_diffusers(unet_config or {})
     for k in diffusers_keys:
         if k.endswith(".weight"):
             unet_key = "diffusion_model.{}".format(diffusers_keys[k])
@@ -428,7 +436,7 @@ def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
                     key_map["lora_prior_unet_{}".format(key_lora)] = k
 
     if model_type == "sd3":  # Diffusers lora SD3
-        diffusers_keys = to_diffusers_mapping.mmdit_to_diffusers(model, output_prefix="diffusion_model.")
+        diffusers_keys = to_diffusers_mapping.mmdit_to_diffusers(unet_config or {}, output_prefix="diffusion_model.")
         for k in diffusers_keys:
             if k.endswith(".weight"):
                 to = diffusers_keys[k]
@@ -445,7 +453,7 @@ def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
                 key_map[key_lora] = to
 
     if model_type == "auraflow":  # Diffusers lora AuraFlow
-        diffusers_keys = to_diffusers_mapping.auraflow_to_diffusers(model, output_prefix="diffusion_model.")
+        diffusers_keys = to_diffusers_mapping.auraflow_to_diffusers(unet_config or {}, output_prefix="diffusion_model.")
         for k in diffusers_keys:
             if k.endswith(".weight"):
                 to = diffusers_keys[k]
@@ -453,7 +461,7 @@ def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
                 key_map[key_lora] = to
 
     if model_type == "pixart":
-        diffusers_keys = to_diffusers_mapping.pixart_to_diffusers(model, output_prefix="diffusion_model.")
+        diffusers_keys = to_diffusers_mapping.pixart_to_diffusers(unet_config or {}, output_prefix="diffusion_model.")
         for k in diffusers_keys:
             if k.endswith(".weight"):
                 to = diffusers_keys[k]
@@ -473,7 +481,7 @@ def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
                 key_map["base_model.model.{}".format(key_lora)] = k #official hunyuan lora format
 
     if model_type == "flux":  # Diffusers lora Flux
-        diffusers_keys = to_diffusers_mapping.flux_to_diffusers(model, output_prefix="diffusion_model.")
+        diffusers_keys = to_diffusers_mapping.flux_to_diffusers(unet_config or {}, output_prefix="diffusion_model.")
         for k in diffusers_keys:
             if k.endswith(".weight"):
                 to = diffusers_keys[k]
