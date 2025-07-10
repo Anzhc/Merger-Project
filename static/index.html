@@ -265,7 +265,7 @@ function registerSpec(spec){
         };
         if(editable){
           widget.mouse = function(event,pos,node){
-            if(event.type !== 'pointerdown') return;
+            if(event.type !== LiteGraph.pointerevents_method + 'down') return;
             var canvas = LiteGraph.LGraphCanvas.active_canvas;
             if(!canvas) return;
             var canvasEl = canvas.canvas;
