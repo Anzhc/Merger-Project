@@ -247,15 +247,21 @@ function registerSpec(spec){
             ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
             ctx.fillRect(margin,y,widget_width - margin*2,height);
             ctx.strokeRect(margin,y,widget_width - margin*2,height);
-            ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
-            ctx.textAlign = 'left';
-            for(var i=0;i<lines.length;i++){
-              ctx.fillText(lines[i], margin+4, y + lineH*(i+0.7));
+            if(!editable){
+              ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
+              ctx.textAlign = 'left';
+              for(var i=0;i<lines.length;i++){
+                ctx.fillText(lines[i], margin+4, y + lineH*(i+0.7));
+              }
             }
             this._height = height;
             this._widget_width = widget_width - margin*2;
             this._y = y;
             this._margin = margin;
+            if(editable){
+              this.ensureInput();
+              this.updateInput();
+            }
           },
           computeSize: function(width){
             var val = this.node.properties[this.options.bindProp] || '';
@@ -264,35 +270,52 @@ function registerSpec(spec){
           }
         };
         if(editable){
-          widget.mouse = function(event,pos,node){
-            if(event.type !== LiteGraph.pointerevents_method + 'down') return;
+          widget.ensureInput = function(){
+            if(this.inputEl) return;
+            var canvas = LiteGraph.LGraphCanvas.active_canvas;
+            if(!canvas) return;
+            var canvasEl = canvas.canvas;
+            var ta = document.createElement('textarea');
+            ta.className = 'node-textarea';
+            ta.style.position = 'absolute';
+            ta.style.resize = 'none';
+            ta.style.background = 'transparent';
+            ta.style.color = LiteGraph.WIDGET_TEXT_COLOR;
+            ta.style.border = 'none';
+            ta.style.outline = 'none';
+            ta.style.font = LiteGraph.NODE_TEXT_SIZE + 'px Arial';
+            var selfw = this;
+            ta.addEventListener('input', function(){
+              selfw.node.properties[selfw.options.bindProp] = ta.value;
+              canvas.setDirty(true,true);
+            });
+            ['pointerdown','pointerup','pointermove','keydown','keyup'].forEach(function(ev){
+              ta.addEventListener(ev, function(e){ e.stopPropagation(); });
+            });
+            canvasEl.parentNode.appendChild(ta);
+            this.inputEl = ta;
+          };
+          widget.updateInput = function(){
+            if(!this.inputEl) return;
             var canvas = LiteGraph.LGraphCanvas.active_canvas;
             if(!canvas) return;
             var canvasEl = canvas.canvas;
             var rect = canvasEl.getBoundingClientRect();
-            var gc = canvas.convertOffsetToCanvas([node.pos[0] + this._margin, node.pos[1] + this._y]);
+            var gc = canvas.convertOffsetToCanvas([this.node.pos[0] + this._margin, this.node.pos[1] + this._y]);
             var left = rect.left + gc[0];
             var top = rect.top + gc[1];
-            var ta = document.createElement('textarea');
-            ta.style.position = 'absolute';
-            ta.style.left = left + 'px';
-            ta.style.top = top + 'px';
-            ta.style.width = this._widget_width + 'px';
-            ta.style.height = this._height + 'px';
-            ta.value = node.properties[this.options.bindProp] || '';
-            canvasEl.parentNode.appendChild(ta);
-            var selfw = this;
-            ta.focus();
-            var finish = function(){
-              node.properties[selfw.options.bindProp] = ta.value;
-              canvasEl.parentNode.removeChild(ta);
-              canvas.setDirty(true,true);
-            };
-            ta.addEventListener('blur', finish);
-            ta.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ ta.blur(); } });
-            event.preventDefault();
-            event.stopPropagation();
-            return true;
+            var scale = canvas.ds.scale;
+            this.inputEl.style.left = left + 'px';
+            this.inputEl.style.top = top + 'px';
+            this.inputEl.style.width = this._widget_width * scale + 'px';
+            this.inputEl.style.height = this._height * scale + 'px';
+            this.inputEl.value = this.node.properties[this.options.bindProp] || '';
+          };
+          widget.onRemove = function(){
+            if(this.inputEl && this.inputEl.parentNode){
+              this.inputEl.parentNode.removeChild(this.inputEl);
+            }
+            this.inputEl = null;
           };
         }
         self.addCustomWidget(widget);
@@ -302,6 +325,13 @@ function registerSpec(spec){
   NodeClass.title = spec.title || type;
   NodeClass.tooltip = spec.tooltip || '';
   NodeClass.prototype.serialize_widgets = true;
+  NodeClass.prototype.onRemoved = function(){
+    if(this.widgets){
+      this.widgets.forEach(function(w){
+        if(w.onRemove) w.onRemove();
+      });
+    }
+  };
   LiteGraph.registerNodeType(type, NodeClass);
   addSidebarItem(type, NodeClass.title, category);
 }
