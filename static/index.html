@@ -230,41 +230,70 @@ function registerSpec(spec){
           self.properties[w.bind] = v;
         }, Object.assign({bindProp:w.bind}, w.options||{}));
       } else if(w.kind === 'textarea'){
-        if(w.options && w.options.disabled){
-          var widget = {
-            type: 'textarea_display',
-            name: w.name,
-            value: self.properties[w.bind] || '',
-            options: Object.assign({bindProp:w.bind}, w.options||{}),
-            node: self,
-            draw: function(ctx,node,widget_width,y,H){
-              var margin = 15;
-              var val = node.properties[this.options.bindProp] || '';
-              var lines = String(val).split(/\n/);
-              var lineH = LiteGraph.NODE_WIDGET_HEIGHT;
-              var height = lines.length * lineH;
-              ctx.fillStyle = '#222';
-              ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
-              ctx.fillRect(margin,y,widget_width - margin*2,height);
-              ctx.strokeRect(margin,y,widget_width - margin*2,height);
-              ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
-              ctx.textAlign = 'left';
-              for(var i=0;i<lines.length;i++){
-                ctx.fillText(lines[i], margin+4, y + lineH*(i+0.7));
-              }
-            },
-            computeSize: function(width){
-              var val = this.node.properties[this.options.bindProp] || '';
-              var lines = String(val).split(/\n/).length || 1;
-              return [width, lines * LiteGraph.NODE_WIDGET_HEIGHT];
+        var editable = !(w.options && w.options.disabled);
+        var widget = {
+          type: 'textarea_' + (editable ? 'edit' : 'display'),
+          name: w.name,
+          value: self.properties[w.bind] || '',
+          options: Object.assign({bindProp:w.bind}, w.options||{}),
+          node: self,
+          draw: function(ctx,node,widget_width,y,H){
+            var margin = 15;
+            var val = node.properties[this.options.bindProp] || '';
+            var lines = String(val).split(/\n/);
+            var lineH = LiteGraph.NODE_WIDGET_HEIGHT;
+            var height = Math.max(lines.length, 3) * lineH;
+            ctx.fillStyle = '#222';
+            ctx.strokeStyle = LiteGraph.WIDGET_OUTLINE_COLOR;
+            ctx.fillRect(margin,y,widget_width - margin*2,height);
+            ctx.strokeRect(margin,y,widget_width - margin*2,height);
+            ctx.fillStyle = LiteGraph.WIDGET_TEXT_COLOR;
+            ctx.textAlign = 'left';
+            for(var i=0;i<lines.length;i++){
+              ctx.fillText(lines[i], margin+4, y + lineH*(i+0.7));
             }
+            this._height = height;
+            this._widget_width = widget_width - margin*2;
+            this._y = y;
+            this._margin = margin;
+          },
+          computeSize: function(width){
+            var val = this.node.properties[this.options.bindProp] || '';
+            var lines = String(val).split(/\n/).length || 1;
+            return [width, Math.max(lines,3) * LiteGraph.NODE_WIDGET_HEIGHT];
+          }
+        };
+        if(editable){
+          widget.mouse = function(event,pos,canvasRef){
+            if(event.type !== 'pointerdown') return;
+            var canvasEl = canvasRef.canvas || canvasRef;
+            var rect = canvasEl.getBoundingClientRect();
+            var gc = canvasRef.convertOffsetToCanvas([this.node.pos[0] + this._margin, this.node.pos[1] + this._y]);
+            var left = rect.left + gc[0];
+            var top = rect.top + gc[1];
+            var ta = document.createElement('textarea');
+            ta.style.position = 'absolute';
+            ta.style.left = left + 'px';
+            ta.style.top = top + 'px';
+            ta.style.width = this._widget_width + 'px';
+            ta.style.height = this._height + 'px';
+            ta.value = this.node.properties[this.options.bindProp] || '';
+            canvasEl.parentNode.appendChild(ta);
+            var selfw = this;
+            ta.focus();
+            var finish = function(){
+              selfw.node.properties[selfw.options.bindProp] = ta.value;
+              canvasEl.parentNode.removeChild(ta);
+              canvasRef.setDirty(true,true);
+            };
+            ta.addEventListener('blur', finish);
+            ta.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ ta.blur(); } });
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
           };
-          self.addCustomWidget(widget);
-        } else {
-          self.addWidget('text', w.name, self.properties[w.bind] || '', function(v){
-            self.properties[w.bind] = v;
-          }, Object.assign({bindProp:w.bind, multiline:true}, w.options||{}));
         }
+        self.addCustomWidget(widget);
       }
     });
   }
