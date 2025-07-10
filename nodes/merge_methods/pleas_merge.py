@@ -2,6 +2,7 @@ from ..utils import get_params
 import device_manager
 import torch
 from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
 
 NODE_TYPE = 'merge_methods/pleas_merge'
 NODE_CATEGORY = 'Merge method'
@@ -26,7 +27,7 @@ def _pleas_merge_dicts(a: dict, b: dict, samples: int) -> dict:
     device = torch.device(device_manager.get_device())
     keys = set(a.keys()) & set(b.keys())
     result = {}
-    for k in keys:
+    for k in tqdm(keys, desc='PLeaS merge', unit='param'):
         t1, t2 = a[k], b[k]
         if not isinstance(t1, torch.Tensor):
             t1 = torch.tensor(t1, device=device)
