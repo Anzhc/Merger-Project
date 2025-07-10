@@ -101,14 +101,18 @@ def merge_lora_models(
         if mid is not None:
             b_update = tucker_weight_from_conv(b1, b2, mid)
         else:
-            b_update = matmul_update(b1, b2, weight)
+            b1_f = b1.view(b1.size(0), -1)
+            b2_f = b2.view(b2.size(0), -1)
+            b_update = (b1_f @ b2_f).view_as(weight)
 
-        w_flat = weight.reshape(weight.size(0), weight.size(1), -1)
-        a1_f = a1.reshape(a1.size(0), -1)
-        a2_f = a2.reshape(a2.size(0), -1)
-        wa1 = torch.einsum("o i k, i r -> o r k", w_flat, a1_f)
-        wa2 = torch.einsum("o r k, r i -> o i k", wa1, a2_f)
-        wa2 = wa2.reshape_as(weight)
+        a1_f = a1.view(a1.size(0), -1)
+        a2_f = a2.view(a2.size(0), -1)
+        if weight.dim() > 2:
+            w_wa1 = torch.einsum("o i ..., i r -> o r ...", weight, a1_f)
+            wa2 = torch.einsum("o r ..., r i -> o i ...", w_wa1, a2_f)
+        else:
+            wa2 = (weight @ a1_f) @ a2_f
+        wa2 = wa2.view_as(weight)
         return b_update + wa2
 
     for lora_sd, ratio in zip(loras, ratios):
