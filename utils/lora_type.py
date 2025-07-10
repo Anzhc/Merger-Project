@@ -227,7 +227,10 @@ def load_lora(lora, to_load, log_missing=True):
     return patch_dict
 
 def model_lora_keys_clip(model, key_map={}):
-    sdk = model.state_dict().keys()
+    if hasattr(model, "state_dict"):
+        sdk = model.state_dict().keys()
+    else:
+        sdk = model.keys()
     for k in sdk:
         if k.endswith(".weight"):
             key_map["text_encoders.{}".format(k[:-len(".weight")])] = k #generic lora format without any weird key names
@@ -305,7 +308,10 @@ def model_lora_keys_clip(model, key_map={}):
     return key_map
 
 def model_lora_keys_unet(model, key_map={}, model_type: str | None = None):
-    sd = model.state_dict()
+    if hasattr(model, "state_dict"):
+        sd = model.state_dict()
+    else:
+        sd = model
     sdk = sd.keys()
 
     for k in sdk:
