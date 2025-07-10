@@ -40,17 +40,29 @@ def merge_lora_models(
     clip_g_map = _build_key_map(clip_g) if clip_g is not None else {}
 
     def route_name(name: str):
+        """Return target map and module name for a LoRA prefix."""
+        target_map, target_sd = unet_map, unet
+
         if name.startswith((LORA_PREFIX_TEXT_ENCODER1 + "_", "lycoris_te1_")):
-            return clip_l_map, clip_l, name.split("_", 1)[1] if "_" in name else name
-        if name.startswith((LORA_PREFIX_TEXT_ENCODER2 + "_", "lycoris_te2_")):
-            return clip_g_map, clip_g, name.split("_", 1)[1] if "_" in name else name
-        if name.startswith((LORA_PREFIX_TEXT_ENCODER + "_", "lycoris_te_")):
-            return clip_l_map, clip_l, name.split("_", 1)[1] if "_" in name else name
-        if name.startswith((LORA_PREFIX_UNET + "_", "lycoris_unet_")):
-            return unet_map, unet, name.split("_", 1)[1] if "_" in name else name
-        if name.startswith(("lora_", "lycoris_")):
-            return unet_map, unet, name.split("_", 1)[1] if "_" in name else name
-        return unet_map, unet, name
+            target_map, target_sd = clip_l_map, clip_l
+            name = name.split("_", 1)[1]
+        elif name.startswith((LORA_PREFIX_TEXT_ENCODER2 + "_", "lycoris_te2_")):
+            target_map, target_sd = clip_g_map, clip_g
+            name = name.split("_", 1)[1]
+        elif name.startswith((LORA_PREFIX_TEXT_ENCODER + "_", "lycoris_te_")):
+            target_map, target_sd = clip_l_map, clip_l
+            name = name.split("_", 1)[1]
+        elif name.startswith((LORA_PREFIX_UNET + "_", "lycoris_unet_")):
+            target_map, target_sd = unet_map, unet
+            name = name.split("_", 1)[1]
+        elif name.startswith(("lora_", "lycoris_")):
+            target_map, target_sd = unet_map, unet
+            name = name.split("_", 1)[1]
+
+        if name.startswith(("up_", "down_", "mid_")):
+            name = name.split("_", 1)[1]
+
+        return target_map, target_sd, name
 
     pattern = re.compile(
         r"^(?P<name>.+)\.(?P<type>(?:lora|lycoris)_(?:down|up|mid))\.weight$"
@@ -61,6 +73,7 @@ def merge_lora_models(
         for key in keys:
             m = pattern.match(key)
             if not m:
+                print(f"[merge_lora] skip unmatched key: {key}")
                 continue
             name = m.group("name")
             typ = m.group("type")
@@ -78,6 +91,7 @@ def merge_lora_models(
                 continue
 
             if up_key not in lora_sd:
+                print(f"[merge_lora] missing up weight for {down_key}")
                 continue
 
             down = lora_sd[down_key].to(dtype)
@@ -92,6 +106,7 @@ def merge_lora_models(
             mod_name = mod_name.replace(".", "_")
 
             if t_map is None or mod_name not in t_map:
+                print(f"[merge_lora] no module found for {mod_name} ({key})")
                 continue
 
             base_key = t_map[mod_name]
