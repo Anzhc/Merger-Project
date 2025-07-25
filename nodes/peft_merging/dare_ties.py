@@ -14,6 +14,7 @@ def execute(node, inputs):
     dropout = float(params.get('dropout', 0.0))
     density = 1.0 - dropout
     majority = params.get('majority_sign_method', 'total')
+    rescale = bool(params.get('rescale', True))
 
     models = []
     dtype = None
@@ -29,7 +30,14 @@ def execute(node, inputs):
             models.append(inp)
 
     weights = [1.0] * len(models)
-    merged = merge_state_dicts(models, weights, dare_ties, density=density, majority_sign_method=majority)
+    merged = merge_state_dicts(
+        models,
+        weights,
+        dare_ties,
+        density=density,
+        majority_sign_method=majority,
+        rescale=rescale,
+    )
     return {'data': merged, 'format': fmt, 'dtype': dtype}
 
 
@@ -59,7 +67,16 @@ def get_spec():
                 'bind': 'majority_sign_method',
                 'options': {'values': ['total', 'frequency']}
             },
+            {
+                'kind': 'checkbox',
+                'name': 'Rescale After Pruning',
+                'bind': 'rescale'
+            },
         ],
-        'properties': {'dropout': 0.0, 'majority_sign_method': 'total'},
-        'tooltip': 'Combine PEFT tensors with DARE TIES algorithm (https://arxiv.org/pdf/2311.03099v3).\nDropout is applied before sign-based merging.'
+        'properties': {
+            'dropout': 0.0,
+            'majority_sign_method': 'total',
+            'rescale': True,
+        },
+        'tooltip': 'Combine PEFT tensors with DARE TIES algorithm (https://arxiv.org/pdf/2311.03099v3).\nDropout is applied before sign-based merging. If rescale is enabled, weights are divided by density after pruning.'
     }
