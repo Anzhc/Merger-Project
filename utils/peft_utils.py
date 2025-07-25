@@ -99,8 +99,14 @@ def dare_linear(task_tensors: List[torch.Tensor], weights: torch.Tensor, density
     return (pruned * weights).sum(dim=0)
 
 
-def dare_ties(task_tensors: List[torch.Tensor], weights: torch.Tensor, density: float, majority_sign_method: Literal["total", "frequency"] = "total") -> torch.Tensor:
-    pruned = [prune(t, density, method="random", rescale=True) for t in task_tensors]
+def dare_ties(
+    task_tensors: List[torch.Tensor],
+    weights: torch.Tensor,
+    density: float,
+    majority_sign_method: Literal["total", "frequency"] = "total",
+    rescale: bool = True,
+) -> torch.Tensor:
+    pruned = [prune(t, density, method="random", rescale=rescale) for t in task_tensors]
     pruned = torch.stack(pruned, dim=0)
     majority_sign_mask = calculate_majority_sign_mask(pruned, method=majority_sign_method)
     weights = reshape_weight_task_tensors(pruned, weights)

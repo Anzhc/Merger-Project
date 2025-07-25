@@ -14,6 +14,7 @@ def execute(node, inputs):
     dropout = float(params.get('dropout', 0.0))
     density = 1.0 - dropout
     majority = params.get('majority_sign_method', 'total')
+    rescale = bool(params.get('rescale', True))
 
     base = inputs[0]
     others = inputs[1:]
@@ -27,9 +28,15 @@ def execute(node, inputs):
         models.append(inp['data'] if isinstance(inp, dict) else inp)
 
     weights = [1.0] * len(models)
-    merged = merge_state_dicts_with_base(base_data, models, weights, dare_ties,
-                                         density=density,
-                                         majority_sign_method=majority)
+    merged = merge_state_dicts_with_base(
+        base_data,
+        models,
+        weights,
+        dare_ties,
+        density=density,
+        majority_sign_method=majority,
+        rescale=rescale,
+    )
     return {'data': merged, 'format': fmt, 'dtype': dtype}
 
 
@@ -61,7 +68,17 @@ def get_spec():
                 'bind': 'majority_sign_method',
                 'options': {'values': ['total', 'frequency']}
             },
+            {
+                'kind': 'checkbox',
+                'name': 'Rescale After Pruning',
+                'bind': 'rescale'
+            },
         ],
-        'properties': {'dropout': 0.0, 'majority_sign_method': 'total'},
+        'properties': {
+            'dropout': 0.0,
+            'majority_sign_method': 'total',
+            'rescale': True,
+        },
         'tooltip': 'Merge full models relative to Base using the DARE TIES algorithm'
+                   '\nIf rescale is enabled, weights are divided by density after pruning.',
     }
